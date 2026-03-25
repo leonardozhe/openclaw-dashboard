@@ -1,26 +1,400 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* Web3 简洁配色 */
+  --primary: #00F0FF;
+  --primary-foreground: #0A0A0F;
+  --secondary: #FF00FF;
+  --accent: #FFFF00;
+  --dark: #0A0A0F;
+  --darker: #030305;
+  --light: #F0F0F0;
+  
+  /* 霓虹色 - 降低饱和度更高级 */
+  --neon-cyan: #00F0FF;
+  --neon-magenta: #FF00FF;
+  --neon-yellow: #FFFF00;
+  --neon-green: #00FF66;
+  --neon-orange: #FF6600;
+  --neon-purple: #9D00FF;
+  --neon-pink: #FF0080;
+  
+  /* 系统色 - 更深的背景 */
+  --background: #030305;
+  --foreground: #E8E8E8;
+  --card: #0A0A10;
+  --card-foreground: #E8E8E8;
+  --popover: #0A0A10;
+  --popover-foreground: #E8E8E8;
+  --muted: #0F0F15;
+  --muted-foreground: #6B7280;
+  --border: rgba(255, 255, 255, 0.08);
+  --input: rgba(255, 255, 255, 0.03);
+  --ring: #00F0FF;
+  
+  /* 状态色 */
+  --success: #00FF66;
+  --warning: #FFFF00;
+  --error: #FF0040;
+  --info: #00F0FF;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-accent: var(--accent);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-dark: var(--dark);
+  --color-darker: var(--darker);
+  --color-light: var(--light);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-error: var(--error);
+  --color-info: var(--info);
+  --color-neon-cyan: var(--neon-cyan);
+  --color-neon-magenta: var(--neon-magenta);
+  --color-neon-yellow: var(--neon-yellow);
+  --color-neon-green: var(--neon-green);
+  --color-neon-orange: var(--neon-orange);
+  --color-neon-purple: var(--neon-purple);
+  --color-neon-pink: var(--neon-pink);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+* {
+  border-color: var(--border);
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans), system-ui, sans-serif;
+  overflow-x: hidden;
+}
+
+/* 自定义滚动条 - 简洁风格 */
+::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 2px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+/* Web3 简洁背景 */
+.animated-bg {
+  background:
+    radial-gradient(ellipse at 50% 0%, rgba(0, 240, 255, 0.08) 0%, transparent 50%),
+    linear-gradient(180deg, #030305 0%, #050508 50%, #030305 100%);
+}
+
+/* 微妙网格 */
+.cyber-grid {
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.02) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
+  background-size: 60px 60px;
+}
+
+/* 玻璃态效果 - 简洁高级 */
+.glass {
+  background: rgba(10, 10, 16, 0.95);
+  backdrop-filter: blur(24px);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.4);
+}
+
+.glass-light {
+  background: rgba(255, 255, 255, 0.02);
+  backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+/* 柔和光晕 */
+.glow-primary {
+  box-shadow: 0 0 20px rgba(0, 240, 255, 0.15);
+}
+
+.glow-secondary {
+  box-shadow: 0 0 20px rgba(255, 0, 255, 0.15);
+}
+
+.glow-accent {
+  box-shadow: 0 0 20px rgba(255, 255, 0, 0.15);
+}
+
+/* 文字渐变 - 霓虹 */
+.text-gradient {
+  background: linear-gradient(90deg, var(--neon-cyan), var(--neon-magenta), var(--neon-yellow));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.text-gradient-alt {
+  background: linear-gradient(90deg, var(--neon-magenta), var(--neon-purple), var(--neon-cyan));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* 霓虹边框动画 */
+.neon-border {
+  position: relative;
+}
+
+.neon-border::before {
+  content: '';
+  position: absolute;
+  inset: -2px;
+  background: linear-gradient(45deg, var(--neon-cyan), var(--neon-magenta), var(--neon-yellow), var(--neon-cyan));
+  background-size: 400% 400%;
+  border-radius: inherit;
+  z-index: -1;
+  animation: neonGlow 3s ease infinite;
+  filter: blur(2px);
+}
+
+@keyframes neonGlow {
+  0%, 100% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+}
+
+/* 联系人卡片 - 简约专业 */
+.contact-card {
+  background: transparent;
+  border-radius: 8px;
+  transition: all 0.15s ease;
+}
+
+.contact-card:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.contact-card.active {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+/* 技能标签 - 简洁 */
+.skill-tag {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+/* 输入框聚焦效果 */
+.input-glow:focus {
+  box-shadow: 0 0 0 2px rgba(0, 240, 255, 0.15);
+  outline: none;
+  border-color: rgba(0, 240, 255, 0.3);
+}
+
+/* 状态指示器 - 带闪烁动画 */
+.status-online {
+  background: #00FF66;
+  animation: pulse-online 2s ease-in-out infinite;
+  box-shadow: 0 0 8px #00FF66;
+}
+
+.status-busy {
+  background: #FF4040;
+  animation: pulse-busy 1.5s ease-in-out infinite;
+  box-shadow: 0 0 8px #FF4040;
+}
+
+.status-away {
+  background: #FFAA00;
+  animation: pulse-away 2.5s ease-in-out infinite;
+  box-shadow: 0 0 6px #FFAA00;
+}
+
+.status-offline {
+  background: #555;
+  animation: none;
+}
+
+.status-indicator {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+@keyframes pulse-online {
+  0%, 100% {
+    opacity: 1;
+    box-shadow: 0 0 8px #00FF66;
+  }
+  50% {
+    opacity: 0.6;
+    box-shadow: 0 0 16px #00FF66, 0 0 24px #00FF66;
+  }
+}
+
+@keyframes pulse-busy {
+  0%, 100% {
+    opacity: 1;
+    box-shadow: 0 0 8px #FF4040;
+  }
+  50% {
+    opacity: 0.7;
+    box-shadow: 0 0 12px #FF4040;
+  }
+}
+
+@keyframes pulse-away {
+  0%, 100% {
+    opacity: 1;
+    box-shadow: 0 0 6px #FFAA00;
+  }
+  50% {
+    opacity: 0.5;
+    box-shadow: 0 0 10px #FFAA00;
+  }
+}
+
+/* 消息气泡 - 简洁高级 */
+.message-bubble-user {
+  background: rgba(0, 240, 255, 0.1);
+  border: 1px solid rgba(0, 240, 255, 0.15);
+  border-radius: 16px 16px 4px 16px;
+}
+
+.message-bubble-ai {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px 16px 16px 4px;
+}
+
+/* 粒子动画 - 霓虹色 */
+.particle {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  background: radial-gradient(circle, var(--neon-cyan) 0%, transparent 70%);
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+.particle-magenta {
+  background: radial-gradient(circle, var(--neon-magenta) 0%, transparent 70%);
+}
+
+.particle-yellow {
+  background: radial-gradient(circle, var(--neon-yellow) 0%, transparent 70%);
+}
+
+/* 扫描线效果 */
+.scanline {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--neon-cyan), transparent);
+  animation: scanline 4s linear infinite;
+  pointer-events: none;
+  z-index: 100;
+  opacity: 0.5;
+}
+
+@keyframes scanline {
+  0% { top: 0; }
+  100% { top: 100%; }
+}
+
+/* 故障效果 */
+.glitch {
+  position: relative;
+}
+
+.glitch::before,
+.glitch::after {
+  content: attr(data-text);
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.glitch::before {
+  animation: glitch-1 0.3s infinite linear alternate-reverse;
+  color: var(--neon-cyan);
+  z-index: -1;
+}
+
+.glitch::after {
+  animation: glitch-2 0.3s infinite linear alternate-reverse;
+  color: var(--neon-magenta);
+  z-index: -2;
+}
+
+@keyframes glitch-1 {
+  0% { clip-path: inset(20% 0 60% 0); transform: translate(-2px, 2px); }
+  20% { clip-path: inset(60% 0 20% 0); transform: translate(2px, -2px); }
+  40% { clip-path: inset(40% 0 40% 0); transform: translate(-2px, 0); }
+  60% { clip-path: inset(80% 0 10% 0); transform: translate(0, 2px); }
+  80% { clip-path: inset(10% 0 80% 0); transform: translate(2px, 0); }
+  100% { clip-path: inset(50% 0 30% 0); transform: translate(-2px, -2px); }
+}
+
+@keyframes glitch-2 {
+  0% { clip-path: inset(60% 0 20% 0); transform: translate(2px, -2px); }
+  20% { clip-path: inset(20% 0 60% 0); transform: translate(-2px, 2px); }
+  40% { clip-path: inset(80% 0 10% 0); transform: translate(2px, 0); }
+  60% { clip-path: inset(40% 0 40% 0); transform: translate(0, -2px); }
+  80% { clip-path: inset(50% 0 30% 0); transform: translate(-2px, 0); }
+  100% { clip-path: inset(10% 0 80% 0); transform: translate(2px, 2px); }
+}
+
+/* 按钮霓虹效果 */
+.btn-neon {
+  position: relative;
+  background: transparent;
+  border: 2px solid var(--neon-cyan);
+  color: var(--neon-cyan);
+  transition: all 0.3s ease;
+}
+
+.btn-neon:hover {
+  background: var(--neon-cyan);
+  color: var(--dark);
+  box-shadow: 
+    0 0 20px var(--neon-cyan),
+    0 0 40px var(--neon-cyan),
+    inset 0 0 20px rgba(0, 240, 255, 0.3);
+}
+
+.btn-neon-magenta {
+  border-color: var(--neon-magenta);
+  color: var(--neon-magenta);
+}
+
+.btn-neon-magenta:hover {
+  background: var(--neon-magenta);
+  box-shadow: 
+    0 0 20px var(--neon-magenta),
+    0 0 40px var(--neon-magenta),
+    inset 0 0 20px rgba(255, 0, 255, 0.3);
 }
