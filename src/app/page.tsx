@@ -180,7 +180,7 @@ export default function Home() {
                   className="w-full h-full object-contain"
                 />
               </motion.div>
-              <h1 className="text-3xl font-extrabold text-gradient glitch" data-text="YSK小龙虾工作监控系统">
+              <h1 className="text-5xl font-extrabold text-gradient glitch" data-text="YSK小龙虾工作监控系统">
                 YSK小龙虾工作监控系统
               </h1>
             </motion.div>
