@@ -21,9 +21,21 @@ import {
 import { ChatInput, MessageList } from '@/components/chat-input'
 import { contacts, Contact, Message, getAIResponse, cn } from '@/lib/utils'
 
+// Channel 数据类型
+interface ChannelData {
+  id: string
+  name: string
+  nameZh: string
+  nameEn: string
+  icon: string
+  enabled: boolean
+  configured: boolean
+}
+
 export default function Home() {
   // 状态
   const [currentAssistant, setCurrentAssistant] = useState<Contact>(contacts[0])
+  const [channels, setChannels] = useState<ChannelData[]>([])
   const [isVoiceMode, setIsVoiceMode] = useState(false)
   const [isSleeping, setIsSleeping] = useState(false)
   const [isAnimating, setIsAnimating] = useState(false)
@@ -78,6 +90,22 @@ export default function Home() {
     
     return () => clearTimeout(timer)
   }, [isVoiceMode, messages, isChatOpen])
+  
+  // 初始化加载 channels
+  useEffect(() => {
+    const fetchChannels = async () => {
+      try {
+        const response = await fetch('/api/channels')
+        const data = await response.json()
+        if (data.channels) {
+          setChannels(data.channels)
+        }
+      } catch (error) {
+        console.error('Failed to fetch channels:', error)
+      }
+    }
+    fetchChannels()
+  }, [])
   
   // 选择联系人
   const handleSelectContact = useCallback((contact: Contact) => {
@@ -191,50 +219,31 @@ export default function Home() {
               animate={{ opacity: 1, x: 0 }}
               transition={{ duration: 0.5 }}
             >
-              {/* 飞书连接状态 */}
-              <div className="flex items-center gap-1.5">
-                <span className="text-sm text-gray-400">飞书</span>
-                <motion.div
-                  className="w-2 h-2 rounded-full"
-                  style={{
-                    background: '#00FF66',
-                    boxShadow: '0 0 6px #00FF66'
-                  }}
-                  animate={{ scale: [1, 1.2, 1], opacity: [1, 0.8, 1] }}
-                  transition={{ duration: 2, repeat: Infinity }}
-                />
-                <span className="text-xs text-green-400">已连接</span>
-              </div>
+              {/* 动态显示激活的 Channel */}
+              {channels.map((channel, index) => (
+                <div key={channel.id} className="flex items-center gap-1.5">
+                  <span className="text-sm text-gray-400">{channel.nameZh}</span>
+                  <motion.div
+                    className="w-2 h-2 rounded-full"
+                    style={{
+                      background: channel.enabled && channel.configured ? '#00FF66' : '#FF4040',
+                      boxShadow: `0 0 6px ${channel.enabled && channel.configured ? '#00FF66' : '#FF4040'}`
+                    }}
+                    animate={{ scale: [1, 1.2, 1], opacity: [1, 0.8, 1] }}
+                    transition={{ duration: 2, repeat: Infinity, delay: index * 0.5 }}
+                  />
+                  <span className={`text-xs ${channel.enabled && channel.configured ? 'text-green-400' : 'text-red-400'}`}>
+                    {channel.enabled && channel.configured ? '已连接' : '未配置'}
+                  </span>
+                </div>
+              ))}
               
-              {/* WhatsApp连接状态 */}
-              <div className="flex items-center gap-1.5">
-                <span className="text-sm text-gray-400">WhatsApp</span>
-                <motion.div
-                  className="w-2 h-2 rounded-full"
-                  style={{
-                    background: '#00FF66',
-                    boxShadow: '0 0 6px #00FF66'
-                  }}
-                  animate={{ scale: [1, 1.2, 1], opacity: [1, 0.8, 1] }}
-                  transition={{ duration: 2, repeat: Infinity, delay: 0.5 }}
-                />
-                <span className="text-xs text-green-400">已连接</span>
-              </div>
-              
-              {/* Telegram连接状态 */}
-              <div className="flex items-center gap-1.5">
-                <span className="text-sm text-gray-400">Telegram</span>
-                <motion.div
-                  className="w-2 h-2 rounded-full"
-                  style={{
-                    background: '#00FF66',
-                    boxShadow: '0 0 6px #00FF66'
-                  }}
-                  animate={{ scale: [1, 1.2, 1], opacity: [1, 0.8, 1] }}
-                  transition={{ duration: 2, repeat: Infinity, delay: 1 }}
-                />
-                <span className="text-xs text-green-400">已连接</span>
-              </div>
+              {/* 如果没有配置任何 channel，显示提示 */}
+              {channels.length === 0 && (
+                <div className="flex items-center gap-1.5">
+                  <span className="text-sm text-gray-400">暂无激活渠道</span>
+                </div>
+              )}
             </motion.div>
           </header>
           
@@ -408,16 +417,6 @@ export default function Home() {
             )}
           </AnimatePresence>
           
-          {/* 底部滚动日志 */}
-          <div
-            className="absolute bottom-0 left-0 right-0 h-52 border-t"
-            style={{
-              background: 'rgba(8, 8, 12, 0.8)',
-              borderColor: 'rgba(255, 255, 255, 0.06)'
-            }}
-          >
-            <ActivityLog />
-          </div>
         </div>
         
         {/* 右侧联系人面板 */}

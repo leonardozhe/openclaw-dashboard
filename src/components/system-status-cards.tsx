@@ -98,7 +98,7 @@ function StatusCard({ icon, label, value, status, index, isUpdating }: StatusCar
 export function SystemStatusCards() {
   const [mounted, setMounted] = useState(false)
   const [runningHours, setRunningHours] = useState('0.0')
-  const [shrimpCount, setShrimpCount] = useState(35) // 默认 35 只
+  const [agentCount, setAgentCount] = useState(0) // 活跃 agent 数量
   const [updatingCards, setUpdatingCards] = useState<Set<number>>(new Set())
   const [cardValues, setCardValues] = useState({
     redisClients: 28, // Redis 连接客户端数量
@@ -110,6 +110,24 @@ export function SystemStatusCards() {
   // 客户端挂载后才执行动态更新
   useEffect(() => {
     setMounted(true)
+  }, [])
+  
+  // 获取活跃 agent 数量
+  useEffect(() => {
+    const fetchAgentCount = async () => {
+      try {
+        const response = await fetch('/api/agents')
+        const data = await response.json()
+        if (data.activeAgents !== undefined) {
+          setAgentCount(data.activeAgents)
+        }
+      } catch (error) {
+        console.error('Failed to fetch agent count:', error)
+      }
+    }
+    fetchAgentCount()
+    const interval = setInterval(fetchAgentCount, 30000) // 每30秒更新
+    return () => clearInterval(interval)
   }, [])
   
   // 计算运行时间：从 2026年3月3日 17:00 开始（每10分钟更新）
@@ -200,66 +218,37 @@ export function SystemStatusCards() {
     return () => clearInterval(interval)
   }, [cardValues])
   
-  // 龙虾数量变化回调（从日志接收）
-  const handleShrimpCountChange = useCallback((change: number) => {
-    setShrimpCount(prev => {
-      const newCount = Math.max(19, Math.min(48, prev + change))
-      // 只有数量真正变化才闪亮
-      if (newCount !== prev) {
-        setUpdatingCards(prevSet => new Set(prevSet).add(0)) // index 0 是队列龙虾
-        setTimeout(() => {
-          setUpdatingCards(prevSet => {
-            const newSet = new Set(prevSet)
-            newSet.delete(0)
-            return newSet
-          })
-        }, 1600)
-      }
-      return newCount
-    })
+  // Agent 数量变化回调（从日志接收）- 保留接口但不再使用随机波动
+  const handleAgentCountChange = useCallback((newCount: number) => {
+    setAgentCount(newCount)
+    setUpdatingCards(prevSet => new Set(prevSet).add(0)) // index 0 是活跃 Agent
+    setTimeout(() => {
+      setUpdatingCards(prevSet => {
+        const newSet = new Set(prevSet)
+        newSet.delete(0)
+        return newSet
+      })
+    }, 1600)
   }, [])
   
-  // 注册回调到 activity-log
+  // 注册回调到 activity-log（保留兼容性）
   useEffect(() => {
     import('./activity-log').then(module => {
       if (module.setShrimpCountChangeCallback) {
-        module.setShrimpCountChangeCallback(handleShrimpCountChange)
+        // 兼容旧的回调接口
+        module.setShrimpCountChangeCallback((change: number) => {
+          // 不再使用，agent 数量从 API 获取
+        })
       }
     })
-  }, [handleShrimpCountChange])
-  
-  // 随机波动龙虾数量（只有变化才闪亮）
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setShrimpCount(prev => {
-        const change = Math.floor(Math.random() * 5) - 2 // -2 到 2
-        const newCount = Math.max(19, Math.min(48, prev + change))
-        
-        // 只有数量真正变化才闪亮
-        if (newCount !== prev) {
-          setUpdatingCards(prevSet => new Set(prevSet).add(0)) // index 0 是队列龙虾
-          setTimeout(() => {
-            setUpdatingCards(prevSet => {
-              const newSet = new Set(prevSet)
-              newSet.delete(0)
-              return newSet
-            })
-          }, 1600)
-        }
-        
-        return newCount
-      })
-    }, 8000)
-    
-    return () => clearInterval(interval)
   }, [])
   
   const cards: StatusCardProps[] = [
     {
       icon: <Users className="w-4 h-4" />,
-      label: '队列龙虾',
-      value: shrimpCount,
-      status: shrimpCount >= 30 ? 'success' : shrimpCount >= 20 ? 'warning' : 'error',
+      label: '活跃 Agent',
+      value: agentCount,
+      status: agentCount >= 2 ? 'success' : agentCount >= 1 ? 'warning' : 'error',
       index: 0,
       isUpdating: updatingCards.has(0),
     },

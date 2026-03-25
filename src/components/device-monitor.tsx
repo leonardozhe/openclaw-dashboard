@@ -1,184 +1,342 @@
 'use client'
 
 import { motion } from 'framer-motion'
-import { useState, useEffect } from 'react'
-import { Server, Brain, Cpu, HardDrive, ArrowDown, ArrowUp, Zap, Clock, Users } from 'lucide-react'
+import { useState, useEffect, useCallback } from 'react'
+import { Server, Brain, Cpu, HardDrive, ArrowDown, ArrowUp, Monitor } from 'lucide-react'
 import { VoiceVisualizer } from './voice-visualizer'
+import { OpenClawStatusCard } from './openclaw-status-card'
 
-interface DeviceData {
-  id: string
-  name: string
-  type: 'server' | 'ai'
-  status: 'online' | 'warning' | 'offline'
-  cpu: number
-  memory: number
-  network: { in: number; out: number }
-  extra?: string
-}
-
-interface AIData {
-  id: string
-  name: string
-  status: 'online' | 'busy' | 'offline'
-  responseTime: number
-  requestsPerHour: number  // 每小时请求数
-  queueLength: number
-}
-
-// 初始化服务器数据 - 网络流量 1-10 MB/s
-const initialServers: DeviceData[] = [
-  { id: 'srv-1', name: 'Mac mini M4', type: 'server', status: 'online', cpu: 35, memory: 52, network: { in: 2.1, out: 1.5 }, extra: '32GB Unified' },
-  { id: 'srv-2', name: 'Mac mini M2 Pro', type: 'server', status: 'online', cpu: 42, memory: 68, network: { in: 3.2, out: 2.1 }, extra: '32GB Unified' },
-  { id: 'srv-3', name: 'MacBook Pro A1398', type: 'server', status: 'online', cpu: 28, memory: 45, network: { in: 1.8, out: 1.2 }, extra: '16GB DDR3' },
-]
-
-// 初始化 AI 模型数据 - GLM-5 每小时 320-400 次请求 (原 40%)
-// 按比例: GLM-5 70%, Gemini 20%, Claude 10%
-const initialAIModels: AIData[] = [
-  { id: 'ai-1', name: 'GLM-5', status: 'online', responseTime: 40, requestsPerHour: 360, queueLength: 12 },
-  { id: 'ai-2', name: 'Claude Sonnet 4.6', status: 'online', responseTime: 160, requestsPerHour: 52, queueLength: 8 },
-  { id: 'ai-3', name: 'Gemini 3 Flash Proview', status: 'online', responseTime: 165, requestsPerHour: 104, queueLength: 10 },
-]
-
-// 服务器卡片
-function ServerCard({ device, index }: { device: DeviceData; index: number }) {
-  const [data, setData] = useState(device)
+// 品牌 Logo SVG 组件
+function BrandLogo({ platform, className }: { platform: string; className?: string }) {
+  const color = '#00F0FF'
   
+  // Apple Logo
+  if (platform === 'macOS') {
+    return (
+      <svg className={className} viewBox="0 0 24 24" fill={color}>
+        <path d="M17.05 20.28c-.98.95-2.05.8-3.08.35-1.09-.46-2.09-.48-3.24 0-1.44.62-2.2.44-3.06-.35C2.79 15.25 3.51 7.59 9.05 7.31c1.35.07 2.29.74 3.08.8 1.18-.24 2.31-.93 3.57-.84 1.51.12 2.65.72 3.4 1.8-3.12 1.87-2.38 5.98.48 7.13-.57 1.5-1.31 2.99-2.54 4.09l.01-.01zM12.03 7.25c-.15-2.23 1.66-4.07 3.74-4.25.29 2.58-2.34 4.5-3.74 4.25z"/>
+      </svg>
+    )
+  }
+  
+  // Windows Logo
+  if (platform === 'Windows') {
+    return (
+      <svg className={className} viewBox="0 0 24 24" fill={color}>
+        <path d="M3 12V6.75L9 5.43V11.91L3 12M20 3V11.91L10 11.91V5.21L20 3M3 13L9 13.09V19.9L3 18.75V13M20 21L10 19.09V13.09L20 13V21Z"/>
+      </svg>
+    )
+  }
+  
+  // Linux Logo (Tux)
+  if (platform === 'Linux') {
+    return (
+      <svg className={className} viewBox="0 0 24 24" fill={color}>
+        <path d="M12.504 0c-.155 0-.315.008-.48.021-4.226.333-7.126 2.688-8.74 5.625-.688 1.25-1.041 2.417-1.041 3.5 0 1.083.354 2.25 1.041 3.5 1.614 2.937 4.514 5.292 8.74 5.625.165.013.325.021.48.021 1.625 0 3.125-.5 4.375-1.5 1.25-1 2.125-2.5 2.125-4.25 0-.833-.167-1.667-.5-2.5-.333-.5-.75-.833-1.25-1-.5-.417-.833-.75 1.25-.75.5-.833.5-1.5.5-2.5 0-.833-.167-1.667-.5-2.5-.333-.5-.75-.833-1.25-1-.5-.417-.833-.75 1.25-.75.5-.833.5-1.5.5-2.5 0 .833-.167 1.667.5 2.5.333.5.75.833 1.25 1 .5.417.833.75-1.25.75-.5.833-.5 1.5-.5 2.5 0 .833.167 1.667.5 2.5.333.5.75.833 1.25 1 .5.417-.833.75-1.25.75-.5.833-.5 1.5-.5 2.5 0-.833-.167 1.667.5 2.5.333.5.75.833 1.25 1 .5.417.833.75-1.25.75-.5.833-.5 1.5.5 2.5 0-.833-.167 1.667.5 2.5.333.5.75.833 1.25 1 .5.417-.833.75-1.25.75-.5.833-.5 1.5.5 2.5 0-.833-.167 1.667-.5-2.5-.333-.5-.75.833-1.25-1-.5-.417-.833-.75 1.25-.75.5-.833.5 1.5.5 2.5 0-.833-.167 1.667-.5-2.5-.333-.5-.75-.833-1.25-1-.5.417-.833.75-1.25.75-.5.833-.5 1.5.5 2.5 0-.833-.167 1.667.5-2.5z"/>
+      </svg>
+    )
+  }
+  
+  // 默认 Monitor 图标
+  return <Monitor className={className} style={{ color }} />
+}
+
+// AI 厂商 Logo 组件 - 使用 LobeHub Icons
+function VendorLogo({ vendor, className }: { vendor: string; className?: string }) {
+  // LobeHub Icons 映射
+  const iconMap: Record<string, string> = {
+    'openai': 'openai',
+    'anthropic': 'anthropic',
+    'google': 'google',
+    'gemini': 'gemini',
+    'azure': 'azure',
+    'deepseek': 'deepseek',
+    'doubao': 'doubao',
+    'qwen': 'qwen',
+    'tongyi': 'qwen',
+    'bailian': 'qwen',
+    'groq': 'groq',
+    'together': 'together',
+    'fireworks': 'fireworks',
+    'mistral': 'mistral',
+    'siliconflow': 'siliconflow',
+    'silicon': 'siliconflow',
+    'huggingface': 'huggingface',
+    'hf': 'huggingface',
+    'openrouter': 'openrouter',
+    'cerebras': 'cerebras',
+    'perplexity': 'perplexity',
+    'moonshot': 'moonshot',
+    'kimi': 'moonshot',
+    'zhipu': 'zhipu',
+    'minimax': 'minimax',
+  }
+  
+  const iconKey = iconMap[vendor.toLowerCase()] || vendor.toLowerCase()
+  const iconUrl = `https://lobehub.com/icons/${iconKey}.svg`
+  
+  return (
+    <img
+      src={iconUrl}
+      alt={vendor}
+      className={className}
+      style={{
+        width: className?.includes('w-') ? undefined : '1rem',
+        height: className?.includes('h-') ? undefined : '1rem',
+        filter: 'brightness(0) saturate(100%) invert(75%) sepia(100%) saturate(1000%) hue-rotate(280deg)',
+      }}
+      onError={(e) => {
+        // 如果图标加载失败，使用默认 Brain 图标
+        e.currentTarget.style.display = 'none'
+        const parent = e.currentTarget.parentElement
+        if (parent) {
+          parent.innerHTML = '<svg class="' + className + '" viewBox="0 0 24 24" fill="#FF00FF"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/></svg>'
+        }
+      }}
+    />
+  )
+}
+
+// 真实系统数据接口
+interface RealSystemData {
+  name: string
+  cpu: {
+    model: string
+    cores: number
+    usage: number
+  }
+  memory: {
+    total: string
+    used: string
+    free: string
+    usage: number
+  }
+  disk: {
+    total: string
+    used: string
+    free: string
+    usage: number
+  } | null
+  network: {
+    ip: string
+    download: number
+    upload: number
+  }
+  system: {
+    platform: string
+    arch: string
+    uptime: string
+    version: string
+    codename: string
+    fullName: string
+  }
+}
+
+// 供应商数据接口
+interface ProviderModel {
+  id: string
+  name: string
+  inUse: boolean
+}
+
+interface ProviderData {
+  id: string
+  name: string
+  nameEn: string
+  nameZh: string
+  icon: string
+  baseUrl: string
+  latency: number | null
+  models: ProviderModel[]
+  hasApiKey: boolean
+  activated: boolean
+  contextTokens?: number
+}
+
+// 本地机器卡片 - 显示真实系统数据
+function LocalMachineCard({ data }: { data: RealSystemData | null }) {
+  // 使用 useMemo 计算初始网络数据，避免在 effect 中调用 setState
+  const initialNetwork = data?.network ? { download: data.network.download, upload: data.network.upload } : { download: 0, upload: 0 }
+  const [networkData, setNetworkData] = useState(initialNetwork)
+  
+  // 当 data.network 变化时更新网络数据
+  useEffect(() => {
+    if (data?.network) {
+      // 使用 setTimeout 延迟更新，避免同步调用 setState
+      const timer = setTimeout(() => {
+        setNetworkData({
+          download: data.network.download,
+          upload: data.network.upload
+        })
+      }, 0)
+      return () => clearTimeout(timer)
+    }
+  }, [data?.network])
+  
+  // 模拟网络流量变化
   useEffect(() => {
     const interval = setInterval(() => {
-      setData(prev => ({
-        ...prev,
-        cpu: Math.max(5, Math.min(95, prev.cpu + (Math.random() - 0.5) * 15)),
-        memory: Math.max(20, Math.min(90, prev.memory + (Math.random() - 0.5) * 8)),
-        network: {
-          in: Math.max(1, Math.min(10, prev.network.in + (Math.random() - 0.5) * 0.5)),
-          out: Math.max(0.5, Math.min(5, prev.network.out + (Math.random() - 0.5) * 0.3))
-        }
+      setNetworkData(prev => ({
+        download: Math.max(0.5, Math.min(10, prev.download + (Math.random() - 0.5) * 0.5)),
+        upload: Math.max(0.2, Math.min(5, prev.upload + (Math.random() - 0.5) * 0.3))
       }))
-    }, 2500 + index * 300)
+    }, 2500)
     
     return () => clearInterval(interval)
-  }, [index])
+  }, [])
 
-  const statusColor = {
-    online: '#00FF66',
-    warning: '#FFAA00',
-    offline: '#FF4040'
-  }[data.status]
+  if (!data) {
+    return (
+      <motion.div
+        className="relative p-4 rounded-xl overflow-hidden"
+        style={{
+          background: 'rgba(15, 15, 25, 0.9)',
+          border: '1px solid rgba(255,255,255,0.08)'
+        }}
+        initial={{ opacity: 0, x: -20 }}
+        animate={{ opacity: 1, x: 0 }}
+      >
+        <div className="flex items-center justify-center py-8">
+          <Monitor className="w-6 h-6 text-cyan-400 animate-pulse" />
+          <span className="ml-2 text-white/60">正在获取系统信息...</span>
+        </div>
+      </motion.div>
+    )
+  }
+
+  const cpuColor = data.cpu.usage > 80 ? '#FF4040' : data.cpu.usage > 60 ? '#FFAA00' : '#00FF66'
+  const memColor = data.memory.usage > 90 ? '#FF4040' : data.memory.usage > 70 ? '#FFAA00' : '#00F0FF'
 
   return (
     <motion.div
-      className="relative p-3 rounded-xl overflow-hidden"
+      className="relative p-4 rounded-xl overflow-hidden"
       style={{
         background: 'rgba(15, 15, 25, 0.9)',
-        border: '1px solid rgba(255,255,255,0.08)',
-        boxShadow: `0 0 20px ${statusColor}10`
+        border: '1px solid rgba(0, 240, 255, 0.2)',
+        boxShadow: '0 0 30px rgba(0, 240, 255, 0.1)'
       }}
       initial={{ opacity: 0, x: -20 }}
       animate={{ opacity: 1, x: 0 }}
-      transition={{ delay: index * 0.1 }}
     >
-      {/* 数据流动画 */}
-      <div className="absolute inset-0 overflow-hidden pointer-events-none opacity-30">
-        {[...Array(3)].map((_, i) => (
-          <motion.div
-            key={i}
-            className="absolute h-px bg-gradient-to-r from-transparent via-cyan-500 to-transparent"
-            style={{ top: `${25 + i * 25}%`, left: '-100%', width: '200%' }}
-            animate={{ x: ['0%', '100%'] }}
-            transition={{ duration: 4 + i, repeat: Infinity, ease: 'linear', delay: i * 0.5 }}
-          />
-        ))}
-      </div>
-
       {/* 头部 */}
-      <div className="relative flex items-center gap-3 mb-3">
-        <div className="w-9 h-9 rounded-lg flex items-center justify-center" style={{ background: 'rgba(0,240,255,0.1)' }}>
-          <Server className="w-5 h-5" style={{ color: '#00F0FF' }} />
+      <div className="relative flex items-center gap-2 mb-3">
+        <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: 'rgba(0,240,255,0.15)' }}>
+          <BrandLogo platform={data.system.platform} className="w-4 h-4" />
         </div>
         <div className="flex-1 min-w-0">
-          <span className="text-sm font-medium text-white/90 truncate block">{data.name}</span>
-          <div className="flex items-center gap-2 mt-0.5">
-            <div className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ background: statusColor, boxShadow: `0 0 6px ${statusColor}` }} />
-            <span className="text-xs text-white/40">{data.extra}</span>
+          <span className="text-xs font-medium text-white/90 truncate block">{data.name}</span>
+          <div className="flex items-center gap-1.5 mt-0.5">
+            <span className="text-[10px] text-white/40">{data.cpu.model} · {data.memory.total}</span>
           </div>
         </div>
       </div>
 
       {/* CPU & Memory */}
       <div className="grid grid-cols-2 gap-2 mb-2">
-        <div>
-          <div className="flex justify-between items-center text-xs mb-0.5">
-            <div className="flex items-center gap-1">
-              <Cpu className="w-3 h-3 text-white/40" />
+        <div className="p-1.5 rounded-lg" style={{ background: 'rgba(0, 240, 255, 0.05)' }}>
+          <div className="flex justify-between items-center text-[10px] mb-0.5">
+            <div className="flex items-center gap-0.5">
+              <Cpu className="w-2.5 h-2.5 text-white/40" />
               <span className="text-white/40">CPU</span>
             </div>
-            <span className="font-mono text-xs" style={{ color: data.cpu > 70 ? '#FFAA00' : '#00FF66' }}>{data.cpu.toFixed(0)}%</span>
+            <span className="text-[9px] font-mono" style={{ color: cpuColor }}>{data.cpu.usage.toFixed(0)}%</span>
           </div>
           <div className="h-1.5 rounded-full bg-white/5 overflow-hidden">
-            <motion.div className="h-full rounded-full" style={{ background: data.cpu > 70 ? '#FFAA00' : '#00FF66' }} animate={{ width: `${data.cpu}%` }} />
+            <motion.div
+              className="h-full rounded-full"
+              style={{ background: cpuColor }}
+              animate={{ width: `${data.cpu.usage}%` }}
+            />
           </div>
+          <div className="text-[10px] text-white/30 mt-0.5">{data.cpu.cores} 核心</div>
         </div>
-        <div>
-          <div className="flex justify-between items-center text-xs mb-0.5">
-            <div className="flex items-center gap-1">
-              <HardDrive className="w-3 h-3 text-white/40" />
-              <span className="text-white/40">MEM</span>
+        <div className="p-1.5 rounded-lg" style={{ background: 'rgba(255, 0, 255, 0.05)' }}>
+          <div className="flex justify-between items-center text-[10px] mb-0.5">
+            <div className="flex items-center gap-0.5">
+              <HardDrive className="w-2.5 h-2.5 text-white/40" />
+              <span className="text-white/40">内存</span>
             </div>
-            <span className="font-mono text-xs" style={{ color: data.memory > 80 ? '#FF4040' : '#00F0FF' }}>{data.memory.toFixed(0)}%</span>
+            <span className="text-[9px] font-mono" style={{ color: memColor }}>{data.memory.usage.toFixed(0)}%</span>
           </div>
           <div className="h-1.5 rounded-full bg-white/5 overflow-hidden">
-            <motion.div className="h-full rounded-full" style={{ background: data.memory > 80 ? '#FF4040' : '#00F0FF' }} animate={{ width: `${data.memory}%` }} />
+            <motion.div
+              className="h-full rounded-full"
+              style={{ background: memColor }}
+              animate={{ width: `${data.memory.usage}%` }}
+            />
           </div>
+          <div className="text-[10px] text-white/30 mt-0.5">{data.memory.used} / {data.memory.total}</div>
         </div>
       </div>
 
-      {/* Network */}
-      <div className="flex gap-3 text-xs font-mono">
-        <div className="flex items-center gap-1">
-          <ArrowDown className="w-3 h-3" style={{ color: '#00FF66' }} />
-          <span className="text-white/50">{data.network.in.toFixed(1)} MB/s</span>
+      {/* 磁盘信息 */}
+      {data.disk && (
+        <div className="mb-2 p-1.5 rounded-lg" style={{ background: 'rgba(0, 255, 102, 0.05)' }}>
+          <div className="flex justify-between items-center text-[10px] mb-0.5">
+            <div className="flex items-center gap-0.5">
+              <Server className="w-2.5 h-2.5 text-white/40" />
+              <span className="text-white/40">磁盘</span>
+            </div>
+            <span className="text-[9px] font-mono text-green-400">{data.disk.usage.toFixed(1)}%</span>
+          </div>
+          <div className="h-1 rounded-full bg-white/5 overflow-hidden">
+            <motion.div
+              className="h-full rounded-full bg-green-400"
+              animate={{ width: `${data.disk.usage}%` }}
+            />
+          </div>
+          <div className="text-[10px] text-white/30 mt-0.5">{data.disk.used} / {data.disk.total}</div>
         </div>
-        <div className="flex items-center gap-1">
-          <ArrowUp className="w-3 h-3" style={{ color: '#FF00FF' }} />
-          <span className="text-white/50">{data.network.out.toFixed(1)} MB/s</span>
+      )}
+
+      {/* 网络和系统信息 */}
+      <div className="grid grid-cols-2 gap-2">
+        <div className="p-1.5 rounded-lg" style={{ background: 'rgba(255, 170, 0, 0.05)' }}>
+          <div className="flex items-center gap-1 text-[9px] text-white/40 mb-0.5">
+            <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M5 12.55a11 11 0 0 1 14.08 0M1.42 9a16 16 0 0 1 21.16 0M8.53 16.11a6 6 0 0 1 6.95 0M12 20h.01"/>
+            </svg>
+            <span>网络 MB/s</span>
+          </div>
+          <div className="flex gap-1.5 text-[9px] font-mono">
+            <div className="flex items-center gap-0.5">
+              <ArrowDown className="w-2 h-2" style={{ color: '#00FF66' }} />
+              <span className="text-white/50">{networkData.download.toFixed(1)}</span>
+            </div>
+            <div className="flex items-center gap-0.5">
+              <ArrowUp className="w-2 h-2" style={{ color: '#FF00FF' }} />
+              <span className="text-white/50">{networkData.upload.toFixed(1)}</span>
+            </div>
+          </div>
+          <div className="text-[9px] text-white/30 mt-0.5">IP: {data.network.ip}</div>
+        </div>
+        <div className="p-1.5 rounded-lg" style={{ background: 'rgba(0, 240, 255, 0.05)' }}>
+          <div className="flex items-center gap-1 text-[9px] text-white/40 mb-0.5">
+            <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <rect x="2" y="3" width="20" height="14" rx="2" ry="2"/>
+              <line x1="8" y1="21" x2="16" y2="21"/>
+              <line x1="12" y1="17" x2="12" y2="21"/>
+            </svg>
+            <span>系统</span>
+          </div>
+          <div className="text-[9px] text-white/70">{data.system.fullName || `${data.system.platform} ${data.system.arch}`}</div>
+          {data.system.codename && <div className="text-[9px] text-cyan-400/70 mt-0.5">{data.system.codename}</div>}
+          <div className="text-[9px] text-white/30 mt-0.5">运行 {data.system.uptime}</div>
         </div>
       </div>
     </motion.div>
   )
 }
 
-// AI 模型卡片
-function AICard({ model, index }: { model: AIData; index: number }) {
-  const [data, setData] = useState(model)
+// 供应商卡片 - 显示供应商和模型信息
+function ProviderCard({ provider, index }: { provider: ProviderData; index: number }) {
+  const hasModelsInUse = provider.models.some(m => m.inUse)
+  const [showAvailable, setShowAvailable] = useState(false)
   
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setData(prev => {
-        // GLM-5 (index 0) 延迟 40ms 左右，其他 160ms 左右
-        const baseResponseTime = index === 0 ? 40 : 160
-        const newResponseTime = baseResponseTime + (Math.random() - 0.5) * 20
-        
-        // 队列保持在 7-20 范围
-        const newQueue = Math.max(7, Math.min(20, prev.queueLength + Math.floor((Math.random() - 0.4) * 3)))
-        
-        return {
-          ...prev,
-          responseTime: newResponseTime,
-          requestsPerHour: Math.max(50, Math.min(1500, prev.requestsPerHour + Math.floor((Math.random() - 0.5) * 50))),
-          queueLength: newQueue
-        }
-      })
-    }, 2000 + index * 400)
-    
-    return () => clearInterval(interval)
-  }, [index])
-
-  const statusColor = {
-    online: '#00FF66',
-    busy: '#FFAA00',
-    offline: '#FF4040'
-  }[data.status]
+  // 分离激活和可用模型
+  const activatedModels = provider.models.filter(m => m.inUse)
+  const availableModels = provider.models.filter(m => !m.inUse)
+  const hasAvailableModels = availableModels.length > 0
 
   return (
     <motion.div
@@ -186,68 +344,199 @@ function AICard({ model, index }: { model: AIData; index: number }) {
       style={{
         background: 'rgba(15, 15, 25, 0.9)',
         border: '1px solid rgba(255,255,255,0.08)',
-        boxShadow: `0 0 20px ${statusColor}10`
+        boxShadow: `0 0 20px ${hasModelsInUse ? '#00FF66' : '#FFAA00'}10`
       }}
       initial={{ opacity: 0, x: -20 }}
       animate={{ opacity: 1, x: 0 }}
       transition={{ delay: 0.3 + index * 0.1 }}
     >
       {/* 脉冲动画背景 */}
-      <motion.div
-        className="absolute inset-0 opacity-10"
-        style={{ background: `radial-gradient(circle at 50% 50%, ${statusColor} 0%, transparent 70%)` }}
-        animate={{ scale: [1, 1.2, 1], opacity: [0.1, 0.15, 0.1] }}
-        transition={{ duration: 2, repeat: Infinity }}
-      />
+      {hasModelsInUse && (
+        <motion.div
+          className="absolute inset-0 opacity-10"
+          style={{ background: 'radial-gradient(circle at 50% 50%, #00FF66 0%, transparent 70%)' }}
+          animate={{ scale: [1, 1.2, 1], opacity: [0.1, 0.15, 0.1] }}
+          transition={{ duration: 2, repeat: Infinity }}
+        />
+      )}
 
       {/* 头部 */}
-      <div className="relative flex items-center gap-3 mb-3">
-        <div className="w-9 h-9 rounded-lg flex items-center justify-center" style={{ background: 'rgba(255,0,255,0.1)' }}>
-          <Brain className="w-5 h-5" style={{ color: '#FF00FF' }} />
+      <div className="relative flex items-center gap-3 mb-2">
+        <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: 'rgba(255,0,255,0.1)' }}>
+          <VendorLogo vendor={provider.icon} className="w-4 h-4" />
         </div>
         <div className="flex-1 min-w-0">
-          <span className="text-sm font-medium text-white/90 truncate block">{data.name}</span>
-          <div className="flex items-center gap-1.5 mt-0.5">
-            <div className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ background: statusColor, boxShadow: `0 0 6px ${statusColor}` }} />
-            <span className="text-xs text-white/40 capitalize">{data.status === 'online' ? '就绪' : data.status === 'busy' ? '繁忙' : '离线'}</span>
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-medium text-white/90 truncate">{provider.nameZh}</span>
+            {/* 显示可用模型按钮 */}
+            {hasAvailableModels && (
+              <button
+                onClick={() => setShowAvailable(!showAvailable)}
+                className="text-[9px] px-1.5 py-0.5 rounded transition-colors cursor-pointer"
+                style={{
+                  background: showAvailable ? 'rgba(0, 240, 255, 0.2)' : 'rgba(255, 255, 255, 0.1)',
+                  color: showAvailable ? '#00F0FF' : 'rgba(255, 255, 255, 0.5)'
+                }}
+                title={showAvailable ? '隐藏可用模型' : `显示 ${availableModels.length} 个可用模型`}
+              >
+                {showAvailable ? '收起' : `+${availableModels.length}`}
+              </button>
+            )}
+          </div>
+          <div className="flex items-center gap-2 mt-0.5">
+            <div className="flex items-center gap-1.5">
+              <div className="w-1.5 h-1.5 rounded-full" style={{
+                background: provider.latency !== null
+                  ? (provider.latency < 200 ? '#00FF66' : provider.latency < 500 ? '#FFAA00' : '#FF4444')
+                  : '#888888',
+                boxShadow: `0 0 6px ${provider.latency !== null
+                  ? (provider.latency < 200 ? '#00FF66' : provider.latency < 500 ? '#FFAA00' : '#FF4444')
+                  : '#888888'}`
+              }} />
+              <span className="text-[10px] text-white/40">
+                {provider.latency !== null ? `${provider.latency}ms` : '超时'}
+              </span>
+            </div>
+            {/* Token 消耗显示 */}
+            {provider.contextTokens !== undefined && provider.contextTokens > 0 && (
+              <div className="flex items-center gap-1">
+                <svg className="w-2.5 h-2.5 text-cyan-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+                </svg>
+                <span className="text-[10px] text-cyan-400/80">
+                  {(provider.contextTokens / 1000).toFixed(1)}k tokens
+                </span>
+              </div>
+            )}
           </div>
         </div>
       </div>
 
-      {/* 指标 */}
-      <div className="grid grid-cols-3 gap-2 text-center">
-        <div className="p-1.5 rounded-lg" style={{ background: 'rgba(0, 240, 255, 0.08)' }}>
-          <div className="flex items-center justify-center gap-1 mb-0.5">
-            <Clock className="w-2.5 h-2.5 text-white/40" />
-            <span className="text-xs text-white/40">延迟</span>
+      {/* 模型列表 - 默认只显示激活的模型 */}
+      <div className="relative">
+        {provider.models.length > 0 ? (
+          <div className="space-y-1">
+            {/* 激活的模型 */}
+            {activatedModels.map(model => (
+              <div key={model.id} className="flex items-center justify-between p-1.5 rounded-lg" style={{
+                background: 'rgba(0, 255, 102, 0.08)'
+              }}>
+                <span className="text-[10px] text-white/70">{model.name}</span>
+                <span className="text-[9px] px-1.5 py-0.5 rounded-full" style={{
+                  background: 'rgba(0, 255, 102, 0.2)',
+                  color: '#00FF66'
+                }}>
+                  激活
+                </span>
+              </div>
+            ))}
+            
+            {/* 可用的模型 - 默认隐藏，点击按钮显示 */}
+            {showAvailable && availableModels.map(model => (
+              <motion.div
+                key={model.id}
+                className="flex items-center justify-between p-1.5 rounded-lg"
+                style={{ background: 'rgba(255, 255, 255, 0.03)' }}
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                exit={{ opacity: 0, height: 0 }}
+              >
+                <span className="text-[10px] text-white/70">{model.name}</span>
+                <span className="text-[9px] px-1.5 py-0.5 rounded-full" style={{
+                  background: 'rgba(255, 255, 255, 0.1)',
+                  color: 'rgba(255, 255, 255, 0.5)'
+                }}>
+                  可用
+                </span>
+              </motion.div>
+            ))}
+            
+            {/* 无激活模型时的提示 */}
+            {activatedModels.length === 0 && (
+              <div className="p-1.5 rounded-lg text-center" style={{ background: 'rgba(255, 170, 0, 0.08)' }}>
+                <span className="text-[10px] text-white/50">
+                  {hasAvailableModels ? '暂无激活模型' : '暂无模型配置'}
+                </span>
+              </div>
+            )}
           </div>
-          <div className="font-mono text-sm" style={{ color: data.responseTime > 200 ? '#FFAA00' : '#00F0FF' }}>{data.responseTime.toFixed(0)}ms</div>
-        </div>
-        <div className="p-1.5 rounded-lg" style={{ background: 'rgba(0, 255, 102, 0.08)' }}>
-          <div className="flex items-center justify-center gap-1 mb-0.5">
-            <Zap className="w-2.5 h-2.5 text-white/40" />
-            <span className="text-xs text-white/40">请求</span>
+        ) : (
+          <div className="p-1.5 rounded-lg text-center" style={{ background: 'rgba(255, 170, 0, 0.08)' }}>
+            <span className="text-[10px] text-white/50">厂商已激活，暂无模型配置</span>
           </div>
-          <div className="font-mono text-sm text-green-400">{data.requestsPerHour}/h</div>
-        </div>
-        <div className="p-1.5 rounded-lg" style={{ background: 'rgba(255, 0, 255, 0.08)' }}>
-          <div className="flex items-center justify-center gap-1 mb-0.5">
-            <Users className="w-2.5 h-2.5 text-white/40" />
-            <span className="text-xs text-white/40">队列</span>
-          </div>
-          <div className="font-mono text-sm" style={{ color: data.queueLength > 10 ? '#FFAA00' : '#FF00FF' }}>{data.queueLength}</div>
-        </div>
+        )}
       </div>
     </motion.div>
   )
 }
 
 export function DeviceMonitor() {
-  const [servers] = useState(initialServers)
-  const [aiModels] = useState(initialAIModels)
+  const [systemData, setSystemData] = useState<RealSystemData | null>(null)
+  const [providers, setProviders] = useState<ProviderData[]>([])
+  const [isLoading, setIsLoading] = useState(true)
+  const [activeProviderIndex, setActiveProviderIndex] = useState(0)
+
+  // 获取系统信息
+  const fetchSystemInfo = useCallback(async () => {
+    setIsLoading(true)
+    try {
+      const response = await fetch('/api/system-info')
+      const data = await response.json()
+      if (data.device) {
+        setSystemData(data.device)
+      }
+    } catch (error) {
+      console.error('Failed to fetch system info:', error)
+    } finally {
+      setIsLoading(false)
+    }
+  }, [])
+
+  // 获取供应商信息
+  const fetchProviders = useCallback(async () => {
+    try {
+      const response = await fetch('/api/providers')
+      const data = await response.json()
+      if (data.providers) {
+        setProviders(data.providers)
+      }
+    } catch (error) {
+      console.error('Failed to fetch providers:', error)
+    }
+  }, [])
+
+  // 初始加载和定时刷新
+  useEffect(() => {
+    fetchSystemInfo()
+    fetchProviders()
+    
+    // 每 30 秒刷新一次
+    const interval = setInterval(() => {
+      fetchSystemInfo()
+      fetchProviders()
+    }, 30000)
+    
+    return () => clearInterval(interval)
+  }, [fetchSystemInfo, fetchProviders])
+
+  // 统计使用中的模型数量
+  const inUseCount = providers.filter(p => p.models.some(m => m.inUse)).length
+  const activatedCount = providers.filter(p => p.activated).length
 
   return (
     <div className="w-80 flex flex-col gap-4 p-4 overflow-y-auto">
+      {/* 本地机器 - 真实状态 */}
+      <div>
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-sm font-medium text-white/80 flex items-center gap-2">
+            <Monitor className="w-4 h-4" style={{ color: '#00F0FF' }} />
+            本地设备
+          </h3>
+          <div className="w-2 h-2 rounded-full animate-pulse" style={{ background: '#00FF66', boxShadow: '0 0 6px #00FF66' }} />
+        </div>
+        <LocalMachineCard data={systemData} />
+      </div>
+
       {/* AI 大模型 */}
       <div>
         <div className="flex items-center justify-between mb-3">
@@ -255,41 +544,52 @@ export function DeviceMonitor() {
             <Brain className="w-4 h-4" style={{ color: '#FF00FF' }} />
             AI 大模型
           </h3>
-          <div className="flex gap-1">
-            {aiModels.map((m, i) => (
-              <div key={i} className="w-1.5 h-1.5 rounded-full" style={{ background: { online: '#00FF66', busy: '#FFAA00', offline: '#FF4040' }[m.status] }} />
-            ))}
-          </div>
+          {/* 多供应商切换按钮 */}
+          {providers.length > 1 && (
+            <div className="flex gap-1 cursor-pointer">
+              {providers.map((p, i) => (
+                <button
+                  key={i}
+                  onClick={() => setActiveProviderIndex(i)}
+                  className={`w-2 h-2 rounded-full transition-all duration-200 ${i === activeProviderIndex ? 'scale-125' : 'opacity-50 hover:opacity-80'}`}
+                  style={{
+                    background: p.models.some(m => m.inUse) ? '#00FF66' : '#FFAA00',
+                    boxShadow: i === activeProviderIndex ? `0 0 6px ${p.models.some(m => m.inUse) ? '#00FF66' : '#FFAA00'}` : 'none'
+                  }}
+                  title={p.nameZh}
+                />
+              ))}
+            </div>
+          )}
+          {/* 单供应商时显示状态点 */}
+          {providers.length === 1 && (
+            <div className="w-2 h-2 rounded-full" style={{ background: providers[0].models.some(m => m.inUse) ? '#00FF66' : '#FFAA00', boxShadow: `0 0 6px ${providers[0].models.some(m => m.inUse) ? '#00FF66' : '#FFAA00'}` }} />
+          )}
         </div>
         <div className="space-y-2">
-          {aiModels.map((model, index) => (
-            <AICard key={model.id} model={model} index={index} />
-          ))}
+          {providers.length === 0 ? (
+            <div className="p-3 rounded-xl text-center" style={{ background: 'rgba(15, 15, 25, 0.9)', border: '1px solid rgba(255,255,255,0.08)' }}>
+              <span className="text-xs text-white/40">暂无配置厂商</span>
+            </div>
+          ) : (
+            <ProviderCard key={providers[activeProviderIndex]?.id} provider={providers[activeProviderIndex]} index={0} />
+          )}
         </div>
       </div>
 
-      {/* 服务器 */}
+      {/* OpenClaw 状态 */}
       <div>
         <div className="flex items-center justify-between mb-3">
           <h3 className="text-sm font-medium text-white/80 flex items-center gap-2">
-            <Server className="w-4 h-4" style={{ color: '#00F0FF' }} />
-            服务器
+            <span className="text-base">🦞</span>
+            OpenClaw 状态
           </h3>
-          <div className="flex gap-1">
-            {servers.map((s, i) => (
-              <div key={i} className="w-1.5 h-1.5 rounded-full" style={{ background: { online: '#00FF66', warning: '#FFAA00', offline: '#FF4040' }[s.status] }} />
-            ))}
-          </div>
         </div>
-        <div className="space-y-2">
-          {servers.map((device, index) => (
-            <ServerCard key={device.id} device={device} index={index} />
-          ))}
-        </div>
+        <OpenClawStatusCard />
       </div>
 
-      {/* 语音拾音动画 */}
-      <VoiceVisualizer />
+      {/* 语音拾音动画 - 暂时隐藏 */}
+      {/* <VoiceVisualizer /> */}
     </div>
   )
 }
