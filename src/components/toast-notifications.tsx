@@ -125,42 +125,42 @@ export function ToastNotifications() {
   const [toasts, setToasts] = useState<Toast[]>([])
   const [nextId, setNextId] = useState(0)
 
-  const addToast = useCallback(() => {
-    const randomMessage = toastMessages[Math.floor(Math.random() * toastMessages.length)]
+  // 添加 toast 的方法，供外部调用
+  const addToast = useCallback((toast?: Omit<Toast, 'id'>) => {
+    // 如果没有传入 toast，则随机选择一个
+    const randomMessage = toast || toastMessages[Math.floor(Math.random() * toastMessages.length)]
     const newToast: Toast = {
       ...randomMessage,
       id: nextId,
-      duration: 5000,
+      duration: randomMessage.duration || 5000,
     }
     
     setToasts(prev => [...prev.slice(-2), newToast]) // 最多显示3条
     setNextId(prev => prev + 1)
     
-    // 5秒后自动关闭
+    // 自动关闭
     setTimeout(() => {
       setToasts(prev => prev.filter(t => t.id !== newToast.id))
-    }, 5000)
+    }, newToast.duration || 5000)
   }, [nextId])
 
   const dismissToast = useCallback((id: number) => {
     setToasts(prev => prev.filter(t => t.id !== id))
   }, [])
 
-  useEffect(() => {
-    // 初始延迟后开始随机弹出
-    const initialTimeout = setTimeout(() => {
-      addToast()
-    }, 5000) // 初始延迟5秒
-
-    const interval = setInterval(() => {
-      addToast() // 100% 触发
-    }, 30000 + Math.random() * 20000) // 30-50秒随机间隔
-
-    return () => {
-      clearTimeout(initialTimeout)
-      clearInterval(interval)
-    }
-  }, [addToast])
+  // 随机弹窗已禁用，保留组件供后续使用
+  // useEffect(() => {
+  //   const initialTimeout = setTimeout(() => {
+  //     addToast()
+  //   }, 5000)
+  //   const interval = setInterval(() => {
+  //     addToast()
+  //   }, 30000 + Math.random() * 20000)
+  //   return () => {
+  //     clearTimeout(initialTimeout)
+  //     clearInterval(interval)
+  //   }
+  // }, [addToast])
 
   return (
     <div className="fixed bottom-4 right-4 z-50 flex flex-col gap-2 w-80 max-w-[calc(100vw-2rem)]">

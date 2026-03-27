@@ -1,8 +1,8 @@
 'use client'
 
 import { motion, AnimatePresence } from 'framer-motion'
-import { Users, Database, Brain, Container, Clock, Activity } from 'lucide-react'
-import { useState, useEffect, useCallback } from 'react'
+import { Users, Database, Brain, Clock, Activity, Cpu, Network } from 'lucide-react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 
 interface StatusCardProps {
   icon: React.ReactNode
@@ -95,17 +95,48 @@ function StatusCard({ icon, label, value, status, index, isUpdating }: StatusCar
   )
 }
 
+// 格式化运行时间（秒 -> x 天 x 小时 x 分）
+function formatUptime(seconds: number | null): string {
+  if (seconds === null) return '加载中...'
+  
+  const days = Math.floor(seconds / 86400)
+  const hours = Math.floor((seconds % 86400) / 3600)
+  const minutes = Math.floor((seconds % 3600) / 60)
+  
+  if (days > 0) {
+    return `${days} 天 ${hours} 时 ${minutes} 分`
+  } else if (hours > 0) {
+    return `${hours} 时 ${minutes} 分`
+  } else {
+    return `${minutes} 分`
+  }
+}
+
+// 格式化 Token 数量（使用 K/M 后缀）
+function formatTokens(tokens: number): string {
+  if (tokens >= 1000000) {
+    return `${(tokens / 1000000).toFixed(1)}M`
+  } else if (tokens >= 1000) {
+    return `${(tokens / 1000).toFixed(1)}K`
+  }
+  return tokens.toString()
+}
+
 export function SystemStatusCards() {
   const [mounted, setMounted] = useState(false)
-  const [runningHours, setRunningHours] = useState('0.0')
+  const [uptime, setUptime] = useState<number | null>(null) // OpenClaw 运行时间（秒）
   const [agentCount, setAgentCount] = useState(0) // 活跃 agent 数量
+  const [systemLoad, setSystemLoad] = useState<number | null>(null) // 系统负载百分比
+  const [ollamaRunningCount, setOllamaRunningCount] = useState<number | null>(null) // Ollama 运行中的模型数量
+  const [vectorMemoryEnabled, setVectorMemoryEnabled] = useState<boolean | null>(null) // 向量记忆是否启用
+  const [tokenConsumption, setTokenConsumption] = useState<number | null>(null) // Token 消耗总量
   const [updatingCards, setUpdatingCards] = useState<Set<number>>(new Set())
-  const [cardValues, setCardValues] = useState({
-    redisClients: 28, // Redis 连接客户端数量
-    ollamaConnections: 5, // Ollama 连接数
-    docker: 12,
-    systemStatus: '一切正常',
-  })
+  
+  // 用于跟踪之前的值，以便在值变化时触发动画
+  const prevAgentCountRef = useRef<number | null>(null)
+  const prevSystemLoadRef = useRef<number | null>(null)
+  const prevUptimeRef = useRef<number | null>(null)
+  const prevTokenRef = useRef<number | null>(null)
   
   // 客户端挂载后才执行动态更新
   useEffect(() => {
@@ -119,7 +150,20 @@ export function SystemStatusCards() {
         const response = await fetch('/api/agents')
         const data = await response.json()
         if (data.activeAgents !== undefined) {
-          setAgentCount(data.activeAgents)
+          const newCount = data.activeAgents
+          // 检查值是否变化，变化则触发动画
+          if (prevAgentCountRef.current !== null && prevAgentCountRef.current !== newCount) {
+            setUpdatingCards(prev => new Set(prev).add(0)) // card index 0 是活跃的龙虾
+            setTimeout(() => {
+              setUpdatingCards(prev => {
+                const newSet = new Set(prev)
+                newSet.delete(0)
+                return newSet
+              })
+            }, 1600)
+          }
+          prevAgentCountRef.current = newCount
+          setAgentCount(newCount)
         }
       } catch (error) {
         console.error('Failed to fetch agent count:', error)
@@ -130,98 +174,156 @@ export function SystemStatusCards() {
     return () => clearInterval(interval)
   }, [])
   
-  // 计算运行时间：从 2026年3月3日 17:00 开始（每10分钟更新）
+  // 获取系统负载（CPU 和内存计算）
+  useEffect(() => {
+    const fetchSystemLoad = async () => {
+      try {
+        const response = await fetch('/api/system-info')
+        const data = await response.json()
+        if (data.device?.cpu?.usage !== undefined && data.device?.memory?.usage !== undefined) {
+          // 系统负载 = (CPU使用率 + 内存使用率) / 2
+          const load = (data.device.cpu.usage + data.device.memory.usage) / 2
+          // 检查值是否变化，变化则触发动画（允许小数点后一位的微小变化）
+          if (prevSystemLoadRef.current !== null) {
+            const prevLoad = prevSystemLoadRef.current
+            const loadDiff = Math.abs(load - prevLoad)
+            if (loadDiff > 0.5) { // 负载变化超过 0.5% 才触发动画
+              setUpdatingCards(prev => new Set(prev).add(5)) // card index 5 是系统负载
+              setTimeout(() => {
+                setUpdatingCards(prev => {
+                  const newSet = new Set(prev)
+                  newSet.delete(5)
+                  return newSet
+                })
+              }, 1600)
+            }
+          }
+          prevSystemLoadRef.current = load
+          setSystemLoad(load)
+        }
+      } catch (error) {
+        console.error('Failed to fetch system load:', error)
+      }
+    }
+    
+    fetchSystemLoad()
+    const interval = setInterval(fetchSystemLoad, 5000) // 每5秒更新
+    return () => clearInterval(interval)
+  }, [])
+  
+  // 获取 OpenClaw 运行时间（从 API 获取）
   useEffect(() => {
     if (!mounted) return
     
-    const startDate = new Date(2026, 2, 3, 17, 0, 0) // 3月3日 17:00
-    
-    const updateRunningTime = () => {
-      const now = new Date()
-      const diffMs = now.getTime() - startDate.getTime()
-      const diffHours = diffMs / (1000 * 60 * 60)
-      const newHours = diffHours.toFixed(1)
-      
-      // 只有值变化时才更新并闪亮
-      if (newHours !== runningHours) {
-        setRunningHours(newHours)
-        setUpdatingCards(prev => new Set(prev).add(4)) // card index 4 是运行时长
-        setTimeout(() => {
-          setUpdatingCards(prev => {
-            const newSet = new Set(prev)
-            newSet.delete(4)
-            return newSet
-          })
-        }, 1600)
+    const fetchUptime = async () => {
+      try {
+        const response = await fetch('/api/openclaw-status')
+        const data = await response.json()
+        if (data.service?.uptime !== undefined) {
+          const newUptime = data.service.uptime
+          // 检查值是否变化，变化则触发动画
+          if (prevUptimeRef.current !== null && prevUptimeRef.current !== newUptime) {
+            setUpdatingCards(prev => new Set(prev).add(4)) // card index 4 是运行时长
+            setTimeout(() => {
+              setUpdatingCards(prev => {
+                const newSet = new Set(prev)
+                newSet.delete(4)
+                return newSet
+              })
+            }, 1600)
+          }
+          prevUptimeRef.current = newUptime
+          setUptime(newUptime)
+        }
+      } catch (error) {
+        console.error('Failed to fetch uptime:', error)
       }
     }
     
-    updateRunningTime()
-    const interval = setInterval(updateRunningTime, 600000) // 每10分钟更新
-    
+    fetchUptime()
+    const interval = setInterval(fetchUptime, 60000) // 每分钟更新
     return () => clearInterval(interval)
-  }, [runningHours, mounted])
+  }, [mounted])
   
   // 随机更新卡片值和流水灯效果（只有值真正变化才闪亮）
+  // 获取 Ollama 运行中的模型数量
   useEffect(() => {
-    const updateRandomCard = () => {
-      const cardIndex = Math.floor(Math.random() * 5) // 0-4，排除运行时长
-      
-      let hasChanged = false
-      
-      if (cardIndex === 1) {
-        // Redis 连接客户端数量
-        const newClients = Math.floor(Math.random() * 20) + 20 // 20-39
-        if (newClients !== cardValues.redisClients) {
-          setCardValues(prev => ({ ...prev, redisClients: newClients }))
-          hasChanged = true
-        }
-      } else if (cardIndex === 2) {
-        // Ollama 状态
-        const newConnections = Math.floor(Math.random() * 5) + 3 // 3-7
-        if (newConnections !== cardValues.ollamaConnections) {
-          setCardValues(prev => ({ ...prev, ollamaConnections: newConnections }))
-          hasChanged = true
-        }
-      } else if (cardIndex === 3) {
-        // Docker 容器数
-        const dockerCount = Math.floor(Math.random() * 3) + 11 // 11-13
-        if (dockerCount !== cardValues.docker) {
-          setCardValues(prev => ({ ...prev, docker: dockerCount }))
-          hasChanged = true
-        }
-      } else if (cardIndex === 4) {
-        // 系统状态（映射到 card index 5）
-        const statuses = ['一切正常', '运行稳定', '性能良好', '负载正常']
-        const newStatus = statuses[Math.floor(Math.random() * statuses.length)]
-        if (newStatus !== cardValues.systemStatus) {
-          setCardValues(prev => ({ ...prev, systemStatus: newStatus }))
-          hasChanged = true
-        }
-      }
-      
-      // 只有值真正变化才显示流水灯
-      if (hasChanged) {
-        const displayIndex = cardIndex === 4 ? 5 : cardIndex // 系统状态是 index 5
-        setUpdatingCards(prev => new Set(prev).add(displayIndex))
-        setTimeout(() => {
-          setUpdatingCards(prev => {
-            const newSet = new Set(prev)
-            newSet.delete(displayIndex)
-            return newSet
-          })
-        }, 1600)
+    const fetchOllamaStatus = async () => {
+      try {
+        const response = await fetch('/api/ollama-status')
+        const data = await response.json()
+        // 显示已下载的模型数量，如果没有则显示正在运行的模型数量
+        const newCount = data.downloadedCount ?? data.runningCount ?? 0
+        setOllamaRunningCount(newCount)
+      } catch (error) {
+        console.error('Failed to fetch Ollama status:', error)
+        setOllamaRunningCount(0)
       }
     }
     
-    const interval = setInterval(updateRandomCard, 5000 + Math.random() * 4000)
+    fetchOllamaStatus()
+    const interval = setInterval(fetchOllamaStatus, 30000) // 每30秒更新
     return () => clearInterval(interval)
-  }, [cardValues])
+  }, [])
+  
+  // 获取向量记忆状态
+  useEffect(() => {
+    const fetchVectorMemoryStatus = async () => {
+      try {
+        const response = await fetch('/api/vector-memory-status')
+        const data = await response.json()
+        setVectorMemoryEnabled(data.enabled)
+      } catch (error) {
+        console.error('Failed to fetch vector memory status:', error)
+        setVectorMemoryEnabled(false)
+      }
+    }
+    
+    fetchVectorMemoryStatus()
+    const interval = setInterval(fetchVectorMemoryStatus, 60000) // 每60秒更新
+    return () => clearInterval(interval)
+  }, [])
+  
+  // 获取 Token 消耗
+  useEffect(() => {
+    const fetchTokenConsumption = async () => {
+      try {
+        const response = await fetch('/api/openclaw-status')
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`)
+        }
+        const data = await response.json()
+        const newTokens = data.sessions?.contextTokens ?? 0
+        
+        // 检查值是否变化，变化则触发动画
+        if (prevTokenRef.current !== null && prevTokenRef.current !== newTokens) {
+          setUpdatingCards(prev => new Set(prev).add(1)) // index 1 是 Token 消耗
+          setTimeout(() => {
+            setUpdatingCards(prev => {
+              const newSet = new Set(prev)
+              newSet.delete(1)
+              return newSet
+            })
+          }, 1600)
+        }
+        prevTokenRef.current = newTokens
+        setTokenConsumption(newTokens)
+      } catch (error) {
+        console.error('Failed to fetch token consumption:', error)
+        // 即使失败也设置为 0，避免一直显示 "加载中..."
+        setTokenConsumption(0)
+      }
+    }
+    
+    fetchTokenConsumption()
+    const interval = setInterval(fetchTokenConsumption, 10000) // 每10秒更新
+    return () => clearInterval(interval)
+  }, [])
   
   // Agent 数量变化回调（从日志接收）- 保留接口但不再使用随机波动
   const handleAgentCountChange = useCallback((newCount: number) => {
     setAgentCount(newCount)
-    setUpdatingCards(prevSet => new Set(prevSet).add(0)) // index 0 是活跃 Agent
+    setUpdatingCards(prevSet => new Set(prevSet).add(0)) // index 0 是活跃龙虾
     setTimeout(() => {
       setUpdatingCards(prevSet => {
         const newSet = new Set(prevSet)
@@ -243,10 +345,18 @@ export function SystemStatusCards() {
     })
   }, [])
   
+  // 获取系统负载状态
+  const getLoadStatus = (load: number | null): 'success' | 'warning' | 'error' => {
+    if (load === null) return 'warning'
+    if (load < 50) return 'success'
+    if (load < 80) return 'warning'
+    return 'error'
+  }
+  
   const cards: StatusCardProps[] = [
     {
       icon: <Users className="w-4 h-4" />,
-      label: '活跃 Agent',
+      label: '活跃的龙虾',
       value: agentCount,
       status: agentCount >= 2 ? 'success' : agentCount >= 1 ? 'warning' : 'error',
       index: 0,
@@ -254,41 +364,41 @@ export function SystemStatusCards() {
     },
     {
       icon: <Database className="w-4 h-4" />,
-      label: 'Redis 连接',
-      value: `${cardValues.redisClients} 客户端`,
-      status: cardValues.redisClients >= 25 ? 'success' : 'warning',
+      label: 'Token 消耗',
+      value: tokenConsumption !== null ? formatTokens(tokenConsumption) : '加载中...',
+      status: tokenConsumption !== null && tokenConsumption > 0 ? 'success' : 'warning',
       index: 1,
       isUpdating: updatingCards.has(1),
     },
     {
       icon: <Brain className="w-4 h-4" />,
-      label: 'Ollama 连接',
-      value: `${cardValues.ollamaConnections} 连接`,
-      status: cardValues.ollamaConnections >= 4 ? 'success' : 'warning',
+      label: 'Ollama 模型',
+      value: ollamaRunningCount !== null ? `${ollamaRunningCount} 模型` : '检测中...',
+      status: ollamaRunningCount !== null && ollamaRunningCount > 0 ? 'success' : 'warning',
       index: 2,
       isUpdating: updatingCards.has(2),
     },
     {
-      icon: <Container className="w-4 h-4" />,
-      label: 'Docker 状态',
-      value: `${cardValues.docker} 容器`,
-      status: cardValues.docker >= 10 ? 'success' : 'warning',
+      icon: <Network className="w-4 h-4" />,
+      label: '向量记忆',
+      value: vectorMemoryEnabled === null ? '检测中...' : vectorMemoryEnabled ? '已激活' : '未启用',
+      status: vectorMemoryEnabled === true ? 'success' : 'warning',
       index: 3,
       isUpdating: updatingCards.has(3),
     },
     {
       icon: <Clock className="w-4 h-4" />,
       label: '运行时长',
-      value: `${runningHours} h`,
+      value: formatUptime(uptime),
       status: 'info',
       index: 4,
       isUpdating: updatingCards.has(4),
     },
     {
-      icon: <Activity className="w-4 h-4" />,
-      label: '系统状态',
-      value: cardValues.systemStatus,
-      status: 'success',
+      icon: <Cpu className="w-4 h-4" />,
+      label: '系统负载',
+      value: systemLoad !== null ? `${systemLoad.toFixed(1)}%` : '加载中...',
+      status: getLoadStatus(systemLoad),
       index: 5,
       isUpdating: updatingCards.has(5),
     },

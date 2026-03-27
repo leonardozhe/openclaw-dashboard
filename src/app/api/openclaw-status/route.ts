@@ -1,11 +1,69 @@
 import { NextResponse } from 'next/server'
 import { exec } from 'child_process'
 import { promisify } from 'util'
-import { readFileSync, existsSync } from 'fs'
+import { readFileSync, existsSync, writeFileSync } from 'fs'
 import { join } from 'path'
 import { homedir } from 'os'
 
 const execAsync = promisify(exec)
+
+// 缓存最新版本信息，避免频繁请求 GitHub API
+let cachedLatestVersion: { version: string; timestamp: number } | null = null
+const VERSION_CACHE_TTL = 60 * 60 * 1000 // 1 小时缓存
+
+// 从 GitHub 获取最新版本
+async function getLatestVersion(): Promise<string | null> {
+  // 检查缓存
+  if (cachedLatestVersion && Date.now() - cachedLatestVersion.timestamp < VERSION_CACHE_TTL) {
+    return cachedLatestVersion.version
+  }
+  
+  try {
+    const response = await fetch('https://api.github.com/repos/openclaw/openclaw/releases/latest', {
+      headers: {
+        'Accept': 'application/vnd.github.v3+json',
+        'User-Agent': 'MeetClaw-OpenClaw-Status'
+      }
+    })
+    
+    if (!response.ok) {
+      return null
+    }
+    
+    const data = await response.json()
+    const version = data.tag_name || null
+    
+    if (version) {
+      cachedLatestVersion = { version, timestamp: Date.now() }
+    }
+    
+    return version
+  } catch (error) {
+    console.error('Failed to fetch latest version from GitHub:', error)
+    return null
+  }
+}
+
+// 比较版本号，返回 true 表示有新版本
+function hasNewVersion(current: string, latest: string): boolean {
+  // 移除 v 前缀
+  const currentClean = current.replace(/^v/, '')
+  const latestClean = latest.replace(/^v/, '')
+  
+  // 简单比较，假设版本格式为 YYYY.M.D 或类似
+  const currentParts = currentClean.split('.').map(p => parseInt(p, 10) || 0)
+  const latestParts = latestClean.split('.').map(p => parseInt(p, 10) || 0)
+  
+  for (let i = 0; i < Math.max(currentParts.length, latestParts.length); i++) {
+    const currentVal = currentParts[i] || 0
+    const latestVal = latestParts[i] || 0
+    
+    if (latestVal > currentVal) return true
+    if (latestVal < currentVal) return false
+  }
+  
+  return false // 版本相同
+}
 
 interface SecurityAuditItem {
   level: 'critical' | 'warn' | 'info'
@@ -29,6 +87,7 @@ interface OpenClawStatus {
     status: string
     pid: number | null
     label: string
+    uptime: number | null // 运行时间（秒）
   }
   securityAudit: {
     critical: number
@@ -44,6 +103,9 @@ interface OpenClawStatus {
   sessions: {
     active: number
     contextTokens: number
+    sessionTokens: number  // 当前会话 token
+    last30DaysTokens: number  // 过去 30 天 token
+    totalTokens: number  // 总 token
     recent: {
       agentId: string
       model: string
@@ -87,7 +149,7 @@ function parseStatusJson(json: Record<string, unknown>): Partial<OpenClawStatus>
   const result: Partial<OpenClawStatus> = {
     channels: [],
     securityAudit: { critical: 0, warn: 0, info: 0, details: [] },
-    sessions: { active: 0, contextTokens: 0, recent: null },
+    sessions: { active: 0, contextTokens: 0, sessionTokens: 0, last30DaysTokens: 0, totalTokens: 0, recent: null },
     agents: { defaultId: 'main', count: 0, totalSessions: 0 },
     health: 'unknown'
   }
@@ -135,7 +197,8 @@ function parseStatusJson(json: Record<string, unknown>): Partial<OpenClawStatus>
     result.service = {
       status: isRunning ? 'running' : 'stopped',
       pid: pidMatch ? parseInt(pidMatch[1]) : null,
-      label: (gs.label as string) || 'unknown'
+      label: (gs.label as string) || 'unknown',
+      uptime: null // 将在后面通过 PID 计算
     }
   }
 
@@ -147,13 +210,16 @@ function parseStatusJson(json: Record<string, unknown>): Partial<OpenClawStatus>
     result.sessions = {
       active: (sessions.count as number) || 0,
       contextTokens: (defaults.contextTokens as number) || 0,
+      sessionTokens: 0,
+      last30DaysTokens: 0,
+      totalTokens: 0,
       recent: null
     }
 
     // 获取最近的会话
     if (sessions.recent && Array.isArray(sessions.recent) && sessions.recent.length > 0) {
       const recent = sessions.recent[0] as Record<string, unknown>
-      result.sessions.recent = {
+      result.sessions!.recent = {
         agentId: (recent.agentId as string) || 'main',
         model: (recent.model as string) || 'unknown',
         age: (recent.age as number) || 0,
@@ -262,7 +328,8 @@ export async function GET() {
           statusData.service = {
             status: jsonOutput.service.runtime?.status || 'unknown',
             pid: jsonOutput.service.runtime?.pid || null,
-            label: jsonOutput.service.label || 'unknown'
+            label: jsonOutput.service.label || 'unknown',
+            uptime: null
           }
         }
         
@@ -308,6 +375,56 @@ export async function GET() {
       }
     }
     
+    // 计算运行时间（通过 PID 获取进程启动时间）
+    if (statusData.service?.pid) {
+      try {
+        const { stdout: startTimeStr } = await execAsync(`ps -o lstart= -p ${statusData.service.pid}`, { timeout: 5000 })
+        // 解析进程启动时间，格式如 "Wed Mar 25 17:03:59 2026"
+        const startTime = new Date(startTimeStr.trim())
+        if (!isNaN(startTime.getTime())) {
+          const now = new Date()
+          statusData.service.uptime = Math.floor((now.getTime() - startTime.getTime()) / 1000)
+        }
+      } catch {
+        // 无法获取进程启动时间，保持 null
+      }
+    }
+    
+    // 获取真实的 token 消耗数据
+    // 使用 codexbar cost --json 获取完整的 token 统计
+    try {
+      const { stdout: costOutput } = await execAsync('codexbar cost --json', { timeout: 5000 })
+      const costArray = JSON.parse(costOutput)
+      // codexbar 返回的是数组，找到包含 totals 的项（通常是 provider: "claude"）
+      const costData = Array.isArray(costArray)
+        ? costArray.find((item: { totals?: { totalTokens?: number } }) => item.totals !== undefined)
+        : costArray
+      
+      // 使用 totals.totalTokens 作为所有 session 和 agent 的 token 总和
+      if (costData) {
+        if (!statusData.sessions) {
+          statusData.sessions = { active: 0, contextTokens: 0, sessionTokens: 0, last30DaysTokens: 0, totalTokens: 0, recent: null }
+        }
+        // 总 token（所有 session 和 agent 的累计）
+        if (costData.totals?.totalTokens !== undefined) {
+          statusData.sessions.totalTokens = costData.totals.totalTokens
+        }
+        // 过去 30 天 token
+        if (costData.last30DaysTokens !== undefined) {
+          statusData.sessions.last30DaysTokens = costData.last30DaysTokens
+        }
+        // 当前会话 token
+        if (costData.sessionTokens !== undefined) {
+          statusData.sessions.sessionTokens = costData.sessionTokens
+        }
+        // 兼容旧字段：使用 totalTokens 作为 contextTokens
+        statusData.sessions.contextTokens = statusData.sessions.totalTokens || 0
+      }
+    } catch (error) {
+      console.error('Failed to get token cost from codexbar:', error)
+      // 保持原有值或默认值
+    }
+    
     // 从配置文件补充版本信息
     if (!statusData.version && config?.version) {
       statusData.version = config.version
@@ -339,14 +456,20 @@ export async function GET() {
       }
     }
     
+    // 获取最新版本信息
+    let latestVersion: string | null = null
+    if (statusData.version && statusData.version !== 'unknown') {
+      latestVersion = await getLatestVersion()
+    }
+    
     const response: OpenClawStatus = {
       version: statusData.version || 'unknown',
-      latestVersion: null,
+      latestVersion: latestVersion,
       gateway: statusData.gateway || { mode: 'unknown', address: '', bindMode: '', port: 18789, reachable: false, connectLatencyMs: 0 },
-      service: statusData.service || { status: 'unknown', pid: null, label: 'unknown' },
+      service: statusData.service || { status: 'unknown', pid: null, label: 'unknown', uptime: null },
       securityAudit: statusData.securityAudit || { critical: 0, warn: 0, info: 0, details: [] },
       channels: statusData.channels || [],
-      sessions: statusData.sessions || { active: 0, contextTokens: 0, recent: null },
+      sessions: statusData.sessions || { active: 0, contextTokens: 0, sessionTokens: 0, last30DaysTokens: 0, totalTokens: 0, recent: null },
       agents: statusData.agents || { defaultId: 'main', count: 0, totalSessions: 0 },
       dashboard: statusData.dashboard || '',
       health: statusData.health || 'unknown',
@@ -365,7 +488,7 @@ export async function GET() {
         service: { status: 'error', pid: null, label: 'error' },
         securityAudit: { critical: 0, warn: 0, info: 0, details: [] },
         channels: [],
-        sessions: { active: 0, contextTokens: 0, recent: null },
+        sessions: { active: 0, contextTokens: 0, sessionTokens: 0, last30DaysTokens: 0, totalTokens: 0, recent: null },
         agents: { defaultId: 'main', count: 0, totalSessions: 0 },
         dashboard: '',
         health: 'error' as const,

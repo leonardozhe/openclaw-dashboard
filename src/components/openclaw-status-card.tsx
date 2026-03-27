@@ -67,7 +67,7 @@ export function OpenClawStatusCard() {
 
   useEffect(() => {
     fetchStatus()
-    const interval = setInterval(fetchStatus, 60000)
+    const interval = setInterval(fetchStatus, 60000) // 每 1 分钟刷新一次
     return () => clearInterval(interval)
   }, [fetchStatus])
 
@@ -337,8 +337,19 @@ export function OpenClawStatusCard() {
             </div>
             <div className="flex items-center gap-2">
               <span className="text-[9px] font-mono text-cyan-400">v{status?.version || 'unknown'}</span>
-              {status?.version && getDaysSinceVersion(status.version) > 0 && (
-                <span className="text-white/30">{getDaysSinceVersion(status.version)} 天前升级</span>
+              {/* 新版本提示 */}
+              {status?.latestVersion && status.latestVersion !== `v${status.version}` && (
+                <motion.span
+                  className="text-[8px] px-1.5 py-0.5 rounded-full bg-amber-500/20 text-amber-400 flex items-center gap-1"
+                  initial={{ opacity: 0, scale: 0.8 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  transition={{ delay: 0.3 }}
+                >
+                  <svg className="w-2 h-2" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/>
+                  </svg>
+                  新版本 {status.latestVersion}
+                </motion.span>
               )}
             </div>
           </div>

@@ -1,9 +1,84 @@
 'use client'
 
-import { motion } from 'framer-motion'
+import { motion, AnimatePresence } from 'framer-motion'
 import { Contact } from '@/lib/utils'
 import { cn } from '@/lib/utils'
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
+import { Clock, FileText, AlertCircle, Info, AlertTriangle, Bug, RefreshCw } from 'lucide-react'
+
+// Agent 数据类型（从 API 获取）
+export interface AgentData {
+  id: string
+  name: string
+  status: 'online' | 'busy' | 'away' | 'offline'
+  lastActive: number
+  channel: string
+  origin: string
+  provider: string
+  chatType: 'temporary' | 'permanent'  // 临时或永久会话
+}
+
+// 将 AgentData 转换为 Contact 格式
+function agentToContact(agent: AgentData, index: number, avatarStyle: string = 'bottts'): Contact {
+  // 根据渠道和来源生成友好的标题
+  const channelNames: Record<string, string> = {
+    'webchat': 'Web 聊天',
+    'discord': 'Discord',
+    'slack': 'Slack',
+    'telegram': 'Telegram',
+    'terminal': '终端',
+    'api': 'API',
+    'unknown': '未知渠道'
+  }
+  
+  const originNames: Record<string, string> = {
+    'openclaw-tui': 'OpenClaw TUI',
+    'openclaw-web': 'OpenClaw Web',
+    'openclaw-cli': 'OpenClaw CLI',
+    'unknown': '未知来源'
+  }
+  
+  const channel = channelNames[agent.channel] || agent.channel
+  const origin = originNames[agent.origin] || agent.origin
+  // 在名字后面添加会话类型标签
+  const chatTypeLabel = agent.chatType === 'permanent' ? ' [永久]' : ' [临时]'
+  const displayName = (agent.name === 'main' ? '龙虾船长' : agent.name) + chatTypeLabel
+  
+  return {
+    id: agent.id,
+    name: displayName,
+    title: `${origin} · ${channel}`,
+    bio: `最后活跃: ${formatLastActive(agent.lastActive)}`,
+    skills: [],
+    status: agent.status,
+    color: getStatusColor(agent.status),
+    avatar: `https://api.dicebear.com/9.x/${avatarStyle}/svg?seed=${agent.name}`
+  }
+}
+
+// 格式化最后活跃时间
+function formatLastActive(timestamp: number): string {
+  const now = Date.now()
+  const diff = now - timestamp
+  const minutes = Math.floor(diff / 60000)
+  const hours = Math.floor(diff / 3600000)
+  
+  if (minutes < 1) return '刚刚'
+  if (minutes < 60) return `${minutes} 分钟前`
+  if (hours < 24) return `${hours} 小时前`
+  return `${Math.floor(hours / 24)} 天前`
+}
+
+// 获取状态颜色
+function getStatusColor(status: Contact['status']): string {
+  switch (status) {
+    case 'online': return '#4ADE80'
+    case 'busy': return '#F87171'
+    case 'away': return '#FACC15'
+    case 'offline': return '#6B7280'
+    default: return '#6B7280'
+  }
+}
 
 // 状态图标组件 - 带动画
 function StatusIcon({ status }: { status: Contact['status'] }) {
@@ -229,48 +304,306 @@ function getRandomStatus(currentStatus: ContactStatus): ContactStatus {
   return 'online'
 }
 
-// 联系人列表面板 - 简约专业风格
-interface ContactsPanelProps {
-  contacts: Contact[]
-  activeContactId: string
-  onSelectContact: (contact: Contact) => void
-  onStatusChange?: (contactId: string, newStatus: ContactStatus) => void
+// Cron 任务接口
+interface CronJob {
+  id: string
+  name: string
+  schedule: string
+  scheduleHuman: string
+  enabled: boolean
+  lastRun: string | null
+  nextRun: string | null
+  command: string
 }
 
-export function ContactsPanel({ contacts: initialContacts, activeContactId, onSelectContact, onStatusChange }: ContactsPanelProps) {
-  // 内部管理联系人状态
-  const [contacts, setContacts] = useState<Contact[]>(() => initialContacts)
+// 日志条目接口
+interface LogEntry {
+  timestamp: string
+  level: 'debug' | 'info' | 'warn' | 'error'
+  message: string
+  source?: string
+  raw?: string
+}
+
+// 联系人列表面板 - 从 API 获取实际 agent 数据
+interface ContactsPanelProps {
+  activeContactId: string
+  onSelectContact: (contact: Contact) => void
+  onStatusChange?: (contactId: string, newStatus: Contact['status']) => void
+  teamName?: string
+  unit?: string
+  avatarStyle?: string
+}
+
+// Cron 任务卡片
+function CronJobCard({ job }: { job: CronJob }) {
+  return (
+    <motion.div
+      className="p-2 rounded-lg border"
+      style={{
+        background: job.enabled ? 'rgba(0, 240, 255, 0.05)' : 'rgba(255, 255, 255, 0.02)',
+        borderColor: job.enabled ? 'rgba(0, 240, 255, 0.15)' : 'rgba(255, 255, 255, 0.05)'
+      }}
+      initial={{ opacity: 0, x: -10 }}
+      animate={{ opacity: 1, x: 0 }}
+    >
+      <div className="flex items-center justify-between mb-1">
+        <span className="text-xs font-medium text-white/80 truncate">{job.name}</span>
+        <span className={`text-[10px] px-1.5 py-0.5 rounded ${job.enabled ? 'bg-green-500/20 text-green-400' : 'bg-gray-500/20 text-gray-400'}`}>
+          {job.enabled ? '启用' : '禁用'}
+        </span>
+      </div>
+      <div className="flex items-center gap-1 text-[10px] text-white/40">
+        <Clock className="w-3 h-3" />
+        <span>{job.scheduleHuman}</span>
+      </div>
+    </motion.div>
+  )
+}
+
+// 日志详情弹窗组件
+function LogDetailModal({ entry, isOpen, onClose }: { entry: LogEntry | null; isOpen: boolean; onClose: () => void }) {
+  if (!entry) return null
   
-  // 随机时间切换状态
+  const levelColors = {
+    error: 'text-red-400 bg-red-500/20 border-red-500/30',
+    warn: 'text-yellow-400 bg-yellow-500/20 border-yellow-500/30',
+    info: 'text-blue-400 bg-blue-500/20 border-blue-500/30',
+    debug: 'text-gray-400 bg-gray-500/20 border-gray-500/30'
+  }
+  
+  const LevelIcon = {
+    error: AlertCircle,
+    warn: AlertTriangle,
+    info: Info,
+    debug: Bug
+  }[entry.level]
+  
+  return (
+    <AnimatePresence>
+      {isOpen && (
+        <motion.div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+        >
+          {/* 背景遮罩 */}
+          <motion.div
+            className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+            onClick={onClose}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+          />
+          
+          {/* 弹窗内容 */}
+          <motion.div
+            className="relative w-full max-w-lg rounded-xl overflow-hidden"
+            style={{
+              background: 'linear-gradient(135deg, rgba(20, 20, 30, 0.98) 0%, rgba(10, 10, 15, 0.98) 100%)',
+              border: '1px solid rgba(255, 255, 255, 0.1)',
+              boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)'
+            }}
+            initial={{ scale: 0.9, y: 20 }}
+            animate={{ scale: 1, y: 0 }}
+            exit={{ scale: 0.9, y: 20 }}
+            transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+          >
+            {/* 头部 */}
+            <div className="p-4 border-b border-white/10 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className={`px-2 py-1 rounded-lg text-xs font-medium flex items-center gap-1 ${levelColors[entry.level]}`}>
+                  <LevelIcon className="w-4 h-4" />
+                  {entry.level.toUpperCase()}
+                </span>
+                <span className="text-white/50 text-xs">{entry.source || 'System'}</span>
+              </div>
+              <button
+                onClick={onClose}
+                className="p-1.5 rounded-lg hover:bg-white/5 transition-colors"
+              >
+                <svg className="w-4 h-4 text-white/60" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            
+            {/* 内容 */}
+            <div className="p-4 space-y-3">
+              {/* 时间戳 */}
+              <div>
+                <label className="text-[10px] text-white/40 uppercase tracking-wider">时间戳</label>
+                <p className="text-sm text-white/80 mt-1">{entry.timestamp}</p>
+              </div>
+              
+              {/* 消息内容 */}
+              <div>
+                <label className="text-[10px] text-white/40 uppercase tracking-wider">消息内容</label>
+                <div
+                  className="mt-1 p-3 rounded-lg bg-white/5 border border-white/10 text-sm text-white/70 font-mono break-all max-h-60 overflow-y-auto"
+                  style={{ wordBreak: 'break-word' }}
+                >
+                  {entry.message}
+                </div>
+              </div>
+              
+              {/* 原始日志 */}
+              {entry.raw && (
+                <div>
+                  <label className="text-[10px] text-white/40 uppercase tracking-wider">原始日志</label>
+                  <div
+                    className="mt-1 p-3 rounded-lg bg-black/30 border border-white/5 text-xs text-white/50 font-mono break-all max-h-40 overflow-y-auto"
+                    style={{ wordBreak: 'break-word' }}
+                  >
+                    {entry.raw}
+                  </div>
+                </div>
+              )}
+            </div>
+            
+            {/* 底部操作 */}
+            <div className="p-4 border-t border-white/10 flex justify-end gap-2">
+              <button
+                onClick={() => {
+                  navigator.clipboard.writeText(entry.message)
+                }}
+                className="px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-xs text-white/60 transition-colors"
+              >
+                复制消息
+              </button>
+              <button
+                onClick={onClose}
+                className="px-3 py-1.5 rounded-lg bg-cyan-500/20 hover:bg-cyan-500/30 text-xs text-cyan-400 transition-colors"
+              >
+                关闭
+              </button>
+            </div>
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
+  )
+}
+
+// 日志条目组件
+function LogEntryItem({ entry, onClick }: { entry: LogEntry; onClick: () => void }) {
+  const levelColors = {
+    error: 'text-red-400 bg-red-500/10',
+    warn: 'text-yellow-400 bg-yellow-500/10',
+    info: 'text-blue-400 bg-blue-500/10',
+    debug: 'text-gray-400 bg-gray-500/10'
+  }
+  
+  const LevelIcon = {
+    error: AlertCircle,
+    warn: AlertTriangle,
+    info: Info,
+    debug: Bug
+  }[entry.level]
+  
+  return (
+    <div
+      className="flex items-start gap-2 py-1.5 px-2 rounded text-[11px] hover:bg-white/5 cursor-pointer transition-colors"
+      onClick={onClick}
+    >
+      <span className="text-white/30 flex-shrink-0 w-16 truncate">{entry.timestamp.split('T')[1]?.slice(0, 8) || ''}</span>
+      <span className={`flex-shrink-0 px-1 rounded ${levelColors[entry.level]}`}>
+        <LevelIcon className="w-3 h-3 inline mr-0.5" />
+        {entry.level.toUpperCase()}
+      </span>
+      <span className="text-white/60 flex-1 truncate">{entry.message}</span>
+    </div>
+  )
+}
+
+export function ContactsPanel({
+  activeContactId,
+  onSelectContact,
+  onStatusChange,
+  teamName = '海洋战队',
+  unit = '只虾',
+  avatarStyle = 'bottts'
+}: ContactsPanelProps) {
+  const [agents, setAgents] = useState<AgentData[]>([])
+  const [isLoading, setIsLoading] = useState(true)
+  
+  // Cron 和 Logs 状态
+  const [activeTab, setActiveTab] = useState<'cron' | 'logs'>('cron')
+  const [cronJobs, setCronJobs] = useState<CronJob[]>([])
+  const [logs, setLogs] = useState<LogEntry[]>([])
+  const [isLoadingCron, setIsLoadingCron] = useState(false)
+  const [isLoadingLogs, setIsLoadingLogs] = useState(false)
+  const logsContainerRef = useRef<HTMLDivElement>(null)
+  
+  // 日志详情弹窗状态
+  const [selectedLogEntry, setSelectedLogEntry] = useState<LogEntry | null>(null)
+  const [isLogDetailOpen, setIsLogDetailOpen] = useState(false)
+  
+  // 从 API 获取 agent 数据
+  const fetchAgents = useCallback(async () => {
+    try {
+      const response = await fetch('/api/agents')
+      const data = await response.json()
+      if (data.agents) {
+        setAgents(data.agents)
+      }
+    } catch (error) {
+      console.error('Failed to fetch agents:', error)
+    } finally {
+      setIsLoading(false)
+    }
+  }, [])
+  
+  // 获取 cron 任务
+  const fetchCronJobs = useCallback(async () => {
+    setIsLoadingCron(true)
+    try {
+      const response = await fetch('/api/cron')
+      const data = await response.json()
+      setCronJobs(data.jobs || [])
+    } catch (error) {
+      console.error('Failed to fetch cron jobs:', error)
+    } finally {
+      setIsLoadingCron(false)
+    }
+  }, [])
+  
+  // 获取日志
+  const fetchLogs = useCallback(async () => {
+    setIsLoadingLogs(true)
+    try {
+      const response = await fetch('/api/logs?limit=50')
+      const data = await response.json()
+      setLogs(data.logs || [])
+    } catch (error) {
+      console.error('Failed to fetch logs:', error)
+    } finally {
+      setIsLoadingLogs(false)
+    }
+  }, [])
+  
+  // 初始化加载
   useEffect(() => {
-    // 为每个联系人设置独立的定时器
-    const timers: NodeJS.Timeout[] = []
-    
-    contacts.forEach((contact, index) => {
-      // 随机间隔：30秒到3分钟
-      const randomInterval = (Math.floor(Math.random() * 150) + 30) * 1000
-      
-      const timer = setInterval(() => {
-        setContacts(prev => {
-          const newContacts = [...prev]
-          const newStatus = getRandomStatus(newContacts[index].status)
-          newContacts[index] = {
-            ...newContacts[index],
-            status: newStatus
-          }
-          // 通知父组件状态变化
-          if (onStatusChange) {
-            onStatusChange(newContacts[index].id, newStatus)
-          }
-          return newContacts
-        })
-      }, randomInterval)
-      
-      timers.push(timer)
-    })
-    
-    return () => timers.forEach(t => clearInterval(t))
-  }, []) // 只在挂载时设置一次
+    fetchAgents()
+    // 每 30 秒刷新一次
+    const interval = setInterval(fetchAgents, 30000)
+    return () => clearInterval(interval)
+  }, [fetchAgents])
+  
+  // 当切换到 cron 或 logs tab 时加载数据
+  useEffect(() => {
+    if (activeTab === 'cron') {
+      fetchCronJobs()
+    } else {
+      fetchLogs()
+    }
+  }, [activeTab, fetchCronJobs, fetchLogs])
+  
+  // 将 agent 数据转换为 Contact 格式
+  const contacts = useMemo(() => {
+    return agents.map((agent, index) => agentToContact(agent, index, avatarStyle))
+  }, [agents, avatarStyle])
   
   const onlineCount = contacts.filter(c => c.status === 'online').length
   const totalCount = contacts.length
@@ -280,36 +613,121 @@ export function ContactsPanel({ contacts: initialContacts, activeContactId, onSe
       background: 'rgba(8, 8, 12, 0.95)',
       borderColor: 'rgba(255, 255, 255, 0.06)'
     }}>
-      {/* 面板标题 - 显示在线/总数 */}
-      <div className="p-4 border-b" style={{ borderColor: 'rgba(255, 255, 255, 0.06)' }}>
-        <div className="flex items-center justify-between">
-          <h2 className="text-sm font-medium text-white/80 tracking-wide flex items-center gap-2">
-            <span className="text-lg">🦞</span>
-            海洋战队
-          </h2>
-          <div className="flex items-center gap-2 text-xs">
-            <span className="flex items-center gap-1">
-              <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse"></span>
-              <span className="text-green-400 font-medium">{onlineCount}</span>
-            </span>
-            <span className="text-white/30">/</span>
-            <span className="text-white/50">{totalCount} 只虾</span>
+      {/* 上部 60% - 联系人列表 */}
+      <div className="h-[60%] flex flex-col">
+        {/* 面板标题 - 显示在线/总数 */}
+        <div className="p-4 border-b" style={{ borderColor: 'rgba(255, 255, 255, 0.06)' }}>
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-medium text-white/80 tracking-wide flex items-center gap-2">
+              <span className="text-lg">🦞</span>
+              {teamName}
+            </h2>
+            <div className="flex items-center gap-2 text-xs">
+              <span className="flex items-center gap-1">
+                <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse"></span>
+                <span className="text-green-400 font-medium">{onlineCount}</span>
+              </span>
+              <span className="text-white/30">/</span>
+              <span className="text-white/50">{totalCount} {unit}</span>
+            </div>
           </div>
+        </div>
+        
+        {/* 联系人列表 */}
+        <div className="flex-1 overflow-y-auto p-2 space-y-1">
+          {contacts.map((contact, index) => (
+            <ContactCard
+              key={contact.id}
+              contact={contact}
+              isActive={activeContactId === contact.id}
+              onClick={() => onSelectContact(contact)}
+              index={index}
+            />
+          ))}
         </div>
       </div>
       
-      {/* 联系人列表 */}
-      <div className="flex-1 overflow-y-auto p-2 space-y-1">
-        {contacts.map((contact, index) => (
-          <ContactCard
-            key={contact.id}
-            contact={contact}
-            isActive={activeContactId === contact.id}
-            onClick={() => onSelectContact(contact)}
-            index={index}
-          />
-        ))}
+      {/* 下部 40% - Cron/Logs Tab */}
+      <div className="h-[40%] flex flex-col border-t" style={{ borderColor: 'rgba(255, 255, 255, 0.06)' }}>
+        {/* Tab 切换 */}
+        <div className="flex items-center border-b" style={{ borderColor: 'rgba(255, 255, 255, 0.06)' }}>
+          <button
+            className={`flex-1 px-3 py-2 text-xs font-medium flex items-center justify-center gap-1.5 transition-colors ${
+              activeTab === 'cron'
+                ? 'text-cyan-400 border-b-2 border-cyan-400 bg-cyan-400/5'
+                : 'text-white/50 hover:text-white/70'
+            }`}
+            onClick={() => setActiveTab('cron')}
+          >
+            <Clock className="w-3.5 h-3.5" />
+            循环任务
+          </button>
+          <button
+            className={`flex-1 px-3 py-2 text-xs font-medium flex items-center justify-center gap-1.5 transition-colors ${
+              activeTab === 'logs'
+                ? 'text-cyan-400 border-b-2 border-cyan-400 bg-cyan-400/5'
+                : 'text-white/50 hover:text-white/70'
+            }`}
+            onClick={() => setActiveTab('logs')}
+          >
+            <FileText className="w-3.5 h-3.5" />
+            系统日志
+          </button>
+        </div>
+        
+        {/* Tab 内容 */}
+        <div className="flex-1 overflow-hidden">
+          {activeTab === 'cron' ? (
+            <div className="h-full overflow-y-auto p-2 space-y-1.5">
+              {isLoadingCron ? (
+                <div className="flex items-center justify-center h-full">
+                  <RefreshCw className="w-4 h-4 text-cyan-400 animate-spin" />
+                </div>
+              ) : cronJobs.length === 0 ? (
+                <div className="flex flex-col items-center justify-center h-full text-white/30">
+                  <Clock className="w-8 h-8 mb-2 opacity-50" />
+                  <span className="text-xs">暂无定时任务</span>
+                </div>
+              ) : (
+                cronJobs.map((job) => (
+                  <CronJobCard key={job.id} job={job} />
+                ))
+              )}
+            </div>
+          ) : (
+            <div ref={logsContainerRef} className="h-full overflow-y-auto p-1">
+              {isLoadingLogs ? (
+                <div className="flex items-center justify-center h-full">
+                  <RefreshCw className="w-4 h-4 text-cyan-400 animate-spin" />
+                </div>
+              ) : logs.length === 0 ? (
+                <div className="flex flex-col items-center justify-center h-full text-white/30">
+                  <FileText className="w-8 h-8 mb-2 opacity-50" />
+                  <span className="text-xs">暂无日志</span>
+                </div>
+              ) : (
+                logs.slice(0, 50).map((entry, i) => (
+                  <LogEntryItem
+                    key={i}
+                    entry={entry}
+                    onClick={() => {
+                      setSelectedLogEntry(entry)
+                      setIsLogDetailOpen(true)
+                    }}
+                  />
+                ))
+              )}
+            </div>
+          )}
+        </div>
       </div>
+      
+      {/* 日志详情弹窗 */}
+      <LogDetailModal
+        entry={selectedLogEntry}
+        isOpen={isLogDetailOpen}
+        onClose={() => setIsLogDetailOpen(false)}
+      />
     </aside>
   )
 }

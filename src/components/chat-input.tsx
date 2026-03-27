@@ -88,9 +88,9 @@ export function ChatInput({ onSendMessage, isVoiceMode, onToggleVoiceMode, isDis
   )
 }
 
-// DiceBear Bottts 头像生成器
-function getDiceBearAvatar(seed: string): string {
-  return `https://api.dicebear.com/9.x/bottts/svg?seed=${seed}`
+// DiceBear 头像生成器
+function getDiceBearAvatar(seed: string, style: string = 'bottts'): string {
+  return `https://api.dicebear.com/9.x/${style}/svg?seed=${seed}`
 }
 
 // 消息列表组件
@@ -98,9 +98,10 @@ interface MessageListProps {
   messages: Message[]
   assistantName?: string
   assistantColor?: string
+  avatarStyle?: string
 }
 
-export function MessageList({ messages, assistantName = 'OpenClaw', assistantColor = '#00F0FF' }: MessageListProps) {
+export function MessageList({ messages, assistantName = 'OpenClaw', assistantColor = '#00F0FF', avatarStyle = 'bottts' }: MessageListProps) {
   const listRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -141,14 +142,14 @@ export function MessageList({ messages, assistantName = 'OpenClaw', assistantCol
             {msg.type === 'user' ? (
               // 用户头像
               <img
-                src={getDiceBearAvatar('user')}
+                src={getDiceBearAvatar('user', avatarStyle)}
                 alt="用户"
                 className="w-full h-full object-cover"
               />
             ) : (
               // AI 头像 - 基于助手名称生成
               <img
-                src={getDiceBearAvatar(assistantName.toLowerCase())}
+                src={getDiceBearAvatar(assistantName.toLowerCase(), avatarStyle)}
                 alt={assistantName}
                 className="w-full h-full object-cover"
               />

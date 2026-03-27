@@ -6,19 +6,23 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { LottieLobster } from '@/components/lottie-lobster'
 import { ContactsPanel } from '@/components/contact-card'
 import { DeviceMonitor } from '@/components/device-monitor'
-import { ActivityLog } from '@/components/activity-log'
 import { SystemStatusCards } from '@/components/system-status-cards'
-import { NetworkArchitecture } from '@/components/network-architecture'
 import { ToastNotifications } from '@/components/toast-notifications'
+import { SettingsModal } from '@/components/settings-modal'
+import { AgentProfileModal } from '@/components/agent-profile-modal'
 import {
   ParticleBackground,
   AIGlow,
   SoundWaves,
   SparkleEffect,
   CelebrationEffect,
-  ScanlineEffect
+  ScanlineEffect,
+  MatrixRainEffect,
+  FloatingParticlesEffect,
+  GlitchEffect
 } from '@/components/voice-animations'
 import { ChatInput, MessageList } from '@/components/chat-input'
+import { WebsocketTerminal } from '@/components/websocket-terminal'
 import { contacts, Contact, Message, getAIResponse, cn } from '@/lib/utils'
 
 // Channel 数据类型
@@ -44,10 +48,34 @@ export default function Home() {
   const [isChatOpen, setIsChatOpen] = useState(false) // 默认关闭聊天框
   const [isAIThinking, setIsAIThinking] = useState(false) // AI 思考状态
   
-  // 从 localStorage 加载聊天记录
+  // Agent 个人信息弹窗状态
+  const [isAgentProfileOpen, setIsAgentProfileOpen] = useState(false)
+  const [selectedAgentId, setSelectedAgentId] = useState('')
+  const [selectedAgentName, setSelectedAgentName] = useState('')
+  const [selectedAgentAvatar, setSelectedAgentAvatar] = useState('')
+  
+  // 设置相关状态
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false)
+  const [customTitle, setCustomTitle] = useState('YSK小龙虾工作监控系统')
+  const [customLogo, setCustomLogo] = useState('/openclaw.png')
+  const [lobsterCount, setLobsterCount] = useState(5)
+  const [teamName, setTeamName] = useState('海洋战队')
+  const [unit, setUnit] = useState('只虾')
+  const [avatarStyle, setAvatarStyle] = useState('bottts')
+  const [effects, setEffects] = useState<string[]>(['scanline']) // 默认开启扫描线
+  const [githubStars, setGithubStars] = useState<number | null>(null)
+  
+  // 从 localStorage 加载聊天记录和自定义设置
   useEffect(() => {
     const savedMessages = localStorage.getItem('openclaw-chat-messages')
     const savedAssistantId = localStorage.getItem('openclaw-chat-assistant')
+    const savedTitle = localStorage.getItem('openclaw-custom-title')
+    const savedLogo = localStorage.getItem('openclaw-custom-logo')
+    const savedLobsterCount = localStorage.getItem('openclaw-lobster-count')
+    const savedTeamName = localStorage.getItem('openclaw-team-name')
+    const savedUnit = localStorage.getItem('openclaw-unit')
+    const savedAvatarStyle = localStorage.getItem('openclaw-avatar-style')
+    const savedEffects = localStorage.getItem('openclaw-effects')
     
     if (savedMessages) {
       try {
@@ -63,6 +91,44 @@ export default function Home() {
       const assistant = contacts.find(c => c.id === savedAssistantId)
       if (assistant) {
         setTimeout(() => setCurrentAssistant(assistant), 0)
+      }
+    }
+    
+    if (savedTitle) {
+      setTimeout(() => setCustomTitle(savedTitle), 0)
+    }
+    
+    if (savedLogo) {
+      setTimeout(() => setCustomLogo(savedLogo), 0)
+    }
+    
+    if (savedLobsterCount) {
+      const count = parseInt(savedLobsterCount)
+      if (!isNaN(count) && count >= 1 && count <= 20) {
+        setTimeout(() => setLobsterCount(count), 0)
+      }
+    }
+    
+    if (savedTeamName) {
+      setTimeout(() => setTeamName(savedTeamName), 0)
+    }
+    
+    if (savedUnit) {
+      setTimeout(() => setUnit(savedUnit), 0)
+    }
+    
+    if (savedAvatarStyle) {
+      setTimeout(() => setAvatarStyle(savedAvatarStyle), 0)
+    }
+    
+    if (savedEffects) {
+      try {
+        const parsedEffects = JSON.parse(savedEffects)
+        if (Array.isArray(parsedEffects)) {
+          setTimeout(() => setEffects(parsedEffects), 0)
+        }
+      } catch (e) {
+        console.error('Failed to parse saved effects:', e)
       }
     }
   }, [])
@@ -92,6 +158,7 @@ export default function Home() {
   }, [isVoiceMode, messages, isChatOpen])
   
   // 初始化加载 channels
+  // 初始化加载 channels
   useEffect(() => {
     const fetchChannels = async () => {
       try {
@@ -107,15 +174,28 @@ export default function Home() {
     fetchChannels()
   }, [])
   
-  // 选择联系人
+  // 获取 GitHub stars
+  useEffect(() => {
+    const fetchGithubStars = async () => {
+      try {
+        const response = await fetch('/api/github-stars')
+        const data = await response.json()
+        if (data.stars !== undefined) {
+          setGithubStars(data.stars)
+        }
+      } catch (error) {
+        console.error('Failed to fetch GitHub stars:', error)
+      }
+    }
+    fetchGithubStars()
+  }, [])
+  
+  // 选择联系人 - 打开 Agent 个人信息弹窗
   const handleSelectContact = useCallback((contact: Contact) => {
-    setCurrentAssistant(contact)
-    setMessages([])
-    localStorage.removeItem('openclaw-chat-messages')
-    setIsSleeping(false)
-    setIsAnimating(true)
-    setIsChatOpen(true) // 选择联系人时打开聊天框
-    setTimeout(() => setIsAnimating(false), 1000)
+    setSelectedAgentId(contact.id)
+    setSelectedAgentName(contact.name)
+    setSelectedAgentAvatar(contact.avatar || `https://api.dicebear.com/9.x/bottts/svg?seed=${contact.id}`)
+    setIsAgentProfileOpen(true)
   }, [])
   
   // 处理联系人状态变化
@@ -163,11 +243,40 @@ export default function Home() {
       setTimeout(() => setIsAnimating(false), 1000)
     }
   }, [isVoiceMode])
+  
+  // 保存设置
+  const handleSaveSettings = useCallback((title: string, logo: string, count: number, team: string, unitName: string, style: string, newEffects: string[]) => {
+    setCustomTitle(title)
+    setCustomLogo(logo)
+    setLobsterCount(count)
+    setTeamName(team)
+    setUnit(unitName)
+    setAvatarStyle(style)
+    setEffects(newEffects)
+    localStorage.setItem('openclaw-custom-title', title)
+    localStorage.setItem('openclaw-custom-logo', logo)
+    localStorage.setItem('openclaw-lobster-count', count.toString())
+    localStorage.setItem('openclaw-team-name', team)
+    localStorage.setItem('openclaw-unit', unitName)
+    localStorage.setItem('openclaw-avatar-style', style)
+    localStorage.setItem('openclaw-effects', JSON.stringify(newEffects))
+  }, [])
+  
+  // 格式化 star 数量
+  const formatStars = (stars: number): string => {
+    if (stars >= 1000) {
+      return `${(stars / 1000).toFixed(1)}k`
+    }
+    return stars.toString()
+  }
 
   return (
     <main className="animated-bg min-h-screen text-white overflow-hidden relative">
-      {/* 扫描线效果 */}
-      <ScanlineEffect />
+      {/* 特效层 - 根据设置条件渲染 */}
+      {effects.includes('scanline') && <ScanlineEffect />}
+      {effects.includes('matrix') && <MatrixRainEffect />}
+      {effects.includes('particles') && <FloatingParticlesEffect />}
+      {effects.includes('glitch') && <GlitchEffect />}
       
       {/* 粒子背景 */}
       <ParticleBackground />
@@ -200,67 +309,137 @@ export default function Home() {
                 whileHover={{ scale: 1.1 }}
                 whileTap={{ scale: 0.9 }}
               >
-                <Image
-                  src="/openclaw.png"
-                  alt="OpenClaw Logo"
-                  width={120}
-                  height={120}
-                  className="w-full h-full object-contain"
-                />
+                {customLogo.startsWith('data:') ? (
+                  <img
+                    src={customLogo}
+                    alt="Custom Logo"
+                    className="w-full h-full object-contain"
+                  />
+                ) : (
+                  <Image
+                    src={customLogo}
+                    alt="OpenClaw Logo"
+                    width={120}
+                    height={120}
+                    className="w-full h-full object-contain"
+                  />
+                )}
               </motion.div>
-              <h1 className="text-5xl font-extrabold text-gradient glitch" data-text="YSK小龙虾工作监控系统">
-                YSK小龙虾工作监控系统
+              <h1
+                className={`text-5xl font-extrabold text-gradient ${effects.includes('glitch') ? 'glitch' : ''}`}
+                data-text={customTitle}
+              >
+                {customTitle}
               </h1>
             </motion.div>
             
             <motion.div
-              className="flex items-center gap-6"
+              className="flex flex-col items-end gap-2"
               initial={{ opacity: 0, x: 20 }}
               animate={{ opacity: 1, x: 0 }}
               transition={{ duration: 0.5 }}
             >
-              {/* 动态显示激活的 Channel */}
-              {channels.map((channel, index) => (
-                <div key={channel.id} className="flex items-center gap-1.5">
-                  <span className="text-sm text-gray-400">{channel.nameZh}</span>
-                  <motion.div
-                    className="w-2 h-2 rounded-full"
-                    style={{
-                      background: channel.enabled && channel.configured ? '#00FF66' : '#FF4040',
-                      boxShadow: `0 0 6px ${channel.enabled && channel.configured ? '#00FF66' : '#FF4040'}`
-                    }}
-                    animate={{ scale: [1, 1.2, 1], opacity: [1, 0.8, 1] }}
-                    transition={{ duration: 2, repeat: Infinity, delay: index * 0.5 }}
-                  />
-                  <span className={`text-xs ${channel.enabled && channel.configured ? 'text-green-400' : 'text-red-400'}`}>
-                    {channel.enabled && channel.configured ? '已连接' : '未配置'}
-                  </span>
-                </div>
-              ))}
+              {/* 顶部图标行 */}
+              <div className="flex items-center gap-3">
+                {/* 文档链接 */}
+                <motion.a
+                  href="https://docs.openclaw.ai/zh-CN"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="p-2 rounded-lg border border-white/10 hover:border-cyan-500/50 hover:bg-white/5 transition-all cursor-pointer group"
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                  title="文档"
+                >
+                  <svg className="w-5 h-5 text-gray-400 group-hover:text-cyan-400 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                </motion.a>
+                
+                {/* 设置按钮 */}
+                <motion.button
+                  onClick={() => setIsSettingsOpen(true)}
+                  className="p-2 rounded-lg border border-white/10 hover:border-cyan-500/50 hover:bg-white/5 transition-all cursor-pointer group"
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                  title="设置"
+                >
+                  <svg className="w-5 h-5 text-gray-400 group-hover:text-cyan-400 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                  </svg>
+                </motion.button>
+                
+                {/* GitHub 链接 */}
+                <motion.a
+                  href="https://github.com/leonardozhe/openclaw-dashboard"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-white/10 hover:border-cyan-500/50 hover:bg-white/5 transition-all cursor-pointer group"
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                  title="GitHub"
+                >
+                  <svg className="w-5 h-5 text-gray-400 group-hover:text-white transition-colors" fill="currentColor" viewBox="0 0 24 24">
+                    <path fillRule="evenodd" clipRule="evenodd" d="M12 2C6.477 2 2 6.477 2 12c0 4.42 2.865 8.17 6.839 9.49.5.092.682-.217.682-.482 0-.237-.008-.866-.013-1.7-2.782.604-3.369-1.34-3.369-1.34-.454-1.156-1.11-1.464-1.11-1.464-.908-.62.069-.608.069-.608 1.003.07 1.531 1.03 1.531 1.03.892 1.529 2.341 1.087 2.91.831.092-.646.35-1.086.636-1.336-2.22-.253-4.555-1.11-4.555-4.943 0-1.091.39-1.984 1.029-2.683-.103-.253-.446-1.27.098-2.647 0 0 .84-.269 2.75 1.025A9.578 9.578 0 0112 6.836c.85.004 1.705.114 2.504.336 1.909-1.294 2.747-1.025 2.747-1.025.546 1.377.203 2.394.1 2.647.64.699 1.028 1.592 1.028 2.683 0 3.842-2.339 4.687-4.566 4.935.359.309.678.919.678 1.852 0 1.336-.012 2.415-.012 2.743 0 .267.18.578.688.48C19.138 20.167 22 16.418 22 12c0-5.523-4.477-10-10-10z" />
+                  </svg>
+                  {githubStars !== null && (
+                    <span className="text-xs text-gray-400 group-hover:text-white transition-colors flex items-center gap-0.5">
+                      <svg className="w-3 h-3 text-amber-400" fill="currentColor" viewBox="0 0 20 20">
+                        <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
+                      </svg>
+                      {formatStars(githubStars)}
+                    </span>
+                  )}
+                </motion.a>
+              </div>
               
-              {/* 如果没有配置任何 channel，显示提示 */}
-              {channels.length === 0 && (
-                <div className="flex items-center gap-1.5">
-                  <span className="text-sm text-gray-400">暂无激活渠道</span>
-                </div>
-              )}
+              {/* Channel 状态行 */}
+              <div className="flex items-center gap-6">
+                {/* 动态显示激活的 Channel */}
+                {channels.map((channel, index) => (
+                  <div key={channel.id} className="flex items-center gap-1.5">
+                    <span className="text-sm text-gray-400">{channel.nameZh}</span>
+                    <motion.div
+                      className="w-2 h-2 rounded-full"
+                      style={{
+                        background: channel.enabled && channel.configured ? '#00FF66' : '#FF4040',
+                        boxShadow: `0 0 6px ${channel.enabled && channel.configured ? '#00FF66' : '#FF4040'}`
+                      }}
+                      animate={{ scale: [1, 1.2, 1], opacity: [1, 0.8, 1] }}
+                      transition={{ duration: 2, repeat: Infinity, delay: index * 0.5 }}
+                    />
+                    <span className={`text-xs ${channel.enabled && channel.configured ? 'text-green-400' : 'text-red-400'}`}>
+                      {channel.enabled && channel.configured ? '已连接' : '未配置'}
+                    </span>
+                  </div>
+                ))}
+                
+                {/* 如果没有配置任何 channel，显示提示 */}
+                {channels.length === 0 && (
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-sm text-gray-400">暂无激活渠道</span>
+                  </div>
+                )}
+              </div>
             </motion.div>
           </header>
           
           {/* 系统状态卡片 */}
           <SystemStatusCards />
+
+          {/* OpenClaw TUI 终端 */}
+          <div className="px-4 py-3">
+            <WebsocketTerminal />
+          </div>
+
+          {/* 说明信息 */}
+          <div className="px-4 pb-4">
+            <div className="text-xs text-gray-500 text-center">
+              通过 WebSocket 连接到 OpenClaw 服务，可实时查看和控制 OpenClaw 系统状态
+            </div>
+          </div>
           
-          {/* 网络架构图 - 默认显示 */}
-          {!isChatOpen && (
-            <motion.div
-              className="absolute left-1/2 top-[50%] -translate-x-1/2 -translate-y-1/2 w-[98%] max-w-[1500px] h-[75%]"
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.5 }}
-            >
-              <NetworkArchitecture />
-            </motion.div>
-          )}
           
           {/* 悬浮聊天框 - 点击头像时显示 */}
           <AnimatePresence>
@@ -287,7 +466,7 @@ export default function Home() {
                     }}
                   >
                     <img
-                      src={currentAssistant.avatar || `https://api.dicebear.com/9.x/bottts/svg?seed=${currentAssistant.id}`}
+                      src={currentAssistant.avatar || `https://api.dicebear.com/9.x/${avatarStyle}/svg?seed=${currentAssistant.id}`}
                       alt={currentAssistant.name}
                       className="w-full h-full object-cover"
                     />
@@ -364,6 +543,7 @@ export default function Home() {
                         messages={messages}
                         assistantName={currentAssistant.name}
                         assistantColor={currentAssistant.color}
+                        avatarStyle={avatarStyle}
                       />
                       {/* AI 思考动画 */}
                       {isAIThinking && (
@@ -374,7 +554,7 @@ export default function Home() {
                         >
                           <div className="w-8 h-8 rounded-full overflow-hidden flex-shrink-0" style={{ border: `1px solid ${currentAssistant.color}40` }}>
                             <img
-                              src={currentAssistant.avatar || `https://api.dicebear.com/9.x/bottts/svg?seed=${currentAssistant.id}`}
+                              src={currentAssistant.avatar || `https://api.dicebear.com/9.x/${avatarStyle}/svg?seed=${currentAssistant.id}`}
                               alt={currentAssistant.name}
                               className="w-full h-full object-cover"
                             />
@@ -421,15 +601,40 @@ export default function Home() {
         
         {/* 右侧联系人面板 */}
         <ContactsPanel
-          contacts={contacts}
           activeContactId={currentAssistant.id}
           onSelectContact={handleSelectContact}
           onStatusChange={handleStatusChange}
+          teamName={teamName}
+          unit={unit}
+          avatarStyle={avatarStyle}
         />
       </div>
       
       {/* 右下角弹窗通知 */}
       <ToastNotifications />
+      
+      {/* 设置弹窗 */}
+      <SettingsModal
+        isOpen={isSettingsOpen}
+        onClose={() => setIsSettingsOpen(false)}
+        currentTitle={customTitle}
+        currentLogo={customLogo}
+        currentLobsterCount={lobsterCount}
+        currentTeamName={teamName}
+        currentUnit={unit}
+        currentAvatarStyle={avatarStyle}
+        currentEffects={effects}
+        onSave={handleSaveSettings}
+      />
+      
+      {/* Agent 个人信息弹窗 */}
+      <AgentProfileModal
+        isOpen={isAgentProfileOpen}
+        onClose={() => setIsAgentProfileOpen(false)}
+        agentId={selectedAgentId}
+        agentName={selectedAgentName}
+        avatarUrl={selectedAgentAvatar}
+      />
     </main>
   )
 }

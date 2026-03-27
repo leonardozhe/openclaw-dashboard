@@ -327,3 +327,238 @@ export function ScanlineEffect() {
     />
   )
 }
+
+// 矩阵雨效果 - 竖线掉落风格
+export function MatrixRainEffect() {
+  const [columns, setColumns] = useState<Array<{
+    id: number;
+    x: number;
+    speed: number;
+    delay: number;
+    height: number;
+    opacity: number;
+  }>>([])
+
+  useEffect(() => {
+    // 减少列数，增大间距，让效果更稀疏
+    const columnCount = Math.floor(window.innerWidth / 80)
+    
+    const newColumns = Array.from({ length: columnCount }, (_, i) => ({
+      id: i,
+      x: i * 80 + Math.random() * 40, // 添加随机偏移
+      speed: 3 + Math.random() * 5, // 掉落速度
+      delay: Math.random() * 8,
+      height: 50 + Math.random() * 150, // 随机竖线高度
+      opacity: 0.2 + Math.random() * 0.4 // 随机透明度
+    }))
+    // 使用 setTimeout 避免直接在 effect 中调用 setState
+    const timer = setTimeout(() => {
+      setColumns(newColumns)
+    }, 0)
+    return () => clearTimeout(timer)
+  }, [])
+
+  return (
+    <div className="fixed inset-0 overflow-hidden pointer-events-none z-50">
+      {columns.map((column) => (
+        <motion.div
+          key={column.id}
+          className="absolute w-px"
+          style={{
+            left: column.x,
+            height: column.height,
+            background: `linear-gradient(to bottom,
+              transparent 0%,
+              rgba(0, 255, 102, ${column.opacity * 0.3}) 10%,
+              rgba(0, 255, 102, ${column.opacity}) 30%,
+              rgba(0, 255, 102, ${column.opacity}) 70%,
+              rgba(0, 255, 102, ${column.opacity * 0.3}) 90%,
+              transparent 100%
+            )`,
+            boxShadow: `0 0 6px rgba(0, 255, 102, ${column.opacity * 0.5})`
+          }}
+          initial={{ y: -column.height - 50 }}
+          animate={{ y: '100vh' }}
+          transition={{
+            duration: column.speed,
+            repeat: Infinity,
+            ease: 'linear',
+            delay: column.delay
+          }}
+        />
+      ))}
+    </div>
+  )
+}
+
+// 漂浮粒子效果 - 发光粒子背景（合并上升和漂浮效果）
+export function FloatingParticlesEffect() {
+  const [particles, setParticles] = useState<Array<{
+    id: number;
+    x: number;
+    y: number;
+    size: number;
+    color: string;
+    duration: number;
+    delay: number;
+    type: 'float' | 'rise';
+    driftX: number;
+  }>>([])
+
+  useEffect(() => {
+    const colors = ['#00F0FF', '#FF00FF', '#FFFF00', '#00FF66', '#9D00FF', '#FF0080']
+    // 创建两种类型的粒子：漂浮和上升
+    const newParticles = Array.from({ length: 35 }, (_, i) => ({
+      id: i,
+      x: Math.random() * 100,
+      y: Math.random() * 100,
+      size: 1.5 + Math.random() * 3,
+      color: colors[Math.floor(Math.random() * colors.length)],
+      duration: 12 + Math.random() * 18,
+      delay: Math.random() * 8,
+      type: (i < 20 ? 'float' : 'rise') as 'float' | 'rise', // 前20个漂浮，后15个上升
+      driftX: (Math.random() - 0.5) * 50
+    }))
+    // 使用 setTimeout 避免直接在 effect 中调用 setState
+    const timer = setTimeout(() => {
+      setParticles(newParticles)
+    }, 0)
+    return () => clearTimeout(timer)
+  }, [])
+
+  return (
+    <div className="fixed inset-0 overflow-hidden pointer-events-none z-50">
+      {particles.map((particle) => (
+        <motion.div
+          key={particle.id}
+          className="absolute rounded-full"
+          style={{
+            left: `${particle.x}%`,
+            top: particle.type === 'rise' ? '100%' : `${particle.y}%`,
+            width: particle.size,
+            height: particle.size,
+            background: `radial-gradient(circle, ${particle.color} 0%, transparent 70%)`,
+            boxShadow: `0 0 ${particle.size * 2}px ${particle.color}`
+          }}
+          initial={particle.type === 'rise' ? { y: 0, opacity: 0 } : undefined}
+          animate={particle.type === 'rise' ? {
+            y: [0, -800],
+            opacity: [0, 0.8, 0.8, 0],
+            x: [0, particle.driftX]
+          } : {
+            y: [0, -30, 0, 30, 0],
+            x: [0, 20, 0, -20, 0],
+            scale: [1, 1.2, 1, 0.8, 1],
+            opacity: [0.3, 0.7, 0.5, 0.8, 0.3]
+          }}
+          transition={{
+            duration: particle.duration,
+            repeat: Infinity,
+            delay: particle.delay,
+            ease: 'easeInOut'
+          }}
+        />
+      ))}
+    </div>
+  )
+}
+
+// 故障风效果 - 赛博朋克风格
+export function GlitchEffect() {
+  const [glitches, setGlitches] = useState<Array<{
+    id: number;
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+    type: 'horizontal' | 'vertical';
+  }>>([])
+
+  useEffect(() => {
+    const createGlitch = () => {
+      const type: 'horizontal' | 'vertical' = Math.random() > 0.5 ? 'horizontal' : 'vertical'
+      const glitch = {
+        id: Date.now() + Math.random(),
+        x: Math.random() * 100,
+        y: Math.random() * 100,
+        width: type === 'horizontal' ? 100 + Math.random() * 200 : 2 + Math.random() * 5,
+        height: type === 'horizontal' ? 2 + Math.random() * 5 : 20 + Math.random() * 50,
+        type
+      }
+      setGlitches(prev => [...prev, glitch])
+      setTimeout(() => {
+        setGlitches(prev => prev.filter(g => g.id !== glitch.id))
+      }, 80 + Math.random() * 150)
+    }
+
+    // 更频繁地创建故障效果
+    const interval = setInterval(() => {
+      if (Math.random() > 0.4) { // 提高触发概率
+        createGlitch()
+        // 有时候同时创建多个故障
+        if (Math.random() > 0.6) {
+          setTimeout(createGlitch, 50)
+        }
+      }
+    }, 150) // 缩短间隔
+
+    return () => clearInterval(interval)
+  }, [])
+
+  return (
+    <div className="fixed inset-0 overflow-hidden pointer-events-none z-50">
+      <AnimatePresence>
+        {glitches.map((glitch) => (
+          <motion.div
+            key={glitch.id}
+            className="absolute"
+            style={{
+              left: `${glitch.x}%`,
+              top: `${glitch.y}%`,
+              width: glitch.width,
+              height: glitch.height,
+              background: glitch.type === 'horizontal'
+                ? 'linear-gradient(90deg, transparent, rgba(0, 240, 255, 0.3), transparent)'
+                : 'linear-gradient(180deg, transparent, rgba(255, 0, 255, 0.3), transparent)',
+              boxShadow: glitch.type === 'horizontal'
+                ? '0 0 10px rgba(0, 240, 255, 0.5)'
+                : '0 0 10px rgba(255, 0, 255, 0.5)'
+            }}
+            initial={{ opacity: 0, scale: 0.8 }}
+            animate={{
+              opacity: [0, 1, 1, 0],
+              x: glitch.type === 'horizontal' ? [0, 5, -5, 0] : 0,
+              y: glitch.type === 'vertical' ? [0, 5, -5, 0] : 0
+            }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.15 }}
+          />
+        ))}
+      </AnimatePresence>
+      
+      {/* RGB 分离效果 */}
+      <motion.div
+        className="absolute inset-0"
+        style={{
+          background: 'transparent',
+          mixBlendMode: 'overlay'
+        }}
+        animate={{
+          opacity: [0, 0.03, 0, 0.02, 0]
+        }}
+        transition={{
+          duration: 0.5,
+          repeat: Infinity,
+          repeatDelay: 2
+        }}
+      >
+        <div
+          className="absolute inset-0"
+          style={{
+            background: 'linear-gradient(90deg, rgba(255, 0, 0, 0.1) 0%, transparent 50%, rgba(0, 255, 255, 0.1) 100%)'
+          }}
+        />
+      </motion.div>
+    </div>
+  )
+}

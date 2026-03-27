@@ -331,12 +331,25 @@ function LocalMachineCard({ data }: { data: RealSystemData | null }) {
 // 供应商卡片 - 显示供应商和模型信息
 function ProviderCard({ provider, index }: { provider: ProviderData; index: number }) {
   const hasModelsInUse = provider.models.some(m => m.inUse)
-  const [showAvailable, setShowAvailable] = useState(false)
+  const [showAll, setShowAll] = useState(false) // 统一控制显示所有模型
   
   // 分离激活和可用模型
   const activatedModels = provider.models.filter(m => m.inUse)
   const availableModels = provider.models.filter(m => !m.inUse)
   const hasAvailableModels = availableModels.length > 0
+  
+  // 激活模型超过 5 个时，默认只显示前 5 个
+  const MAX_VISIBLE_ACTIVATED = 5
+  const hasMoreActivated = activatedModels.length > MAX_VISIBLE_ACTIVATED
+  // 始终只显示前5个激活模型
+  const visibleActivatedModels = activatedModels.slice(0, MAX_VISIBLE_ACTIVATED)
+  // 隐藏的激活模型（用于展开时额外显示）
+  const hiddenActivatedModels = activatedModels.slice(MAX_VISIBLE_ACTIVATED)
+  const hiddenActivatedCount = Math.max(0, activatedModels.length - MAX_VISIBLE_ACTIVATED)
+  
+  // 计算隐藏的总数（隐藏的激活模型 + 可用模型）
+  const totalHiddenCount = hiddenActivatedCount + availableModels.length
+  const hasHiddenModels = totalHiddenCount > 0
 
   return (
     <motion.div
@@ -368,18 +381,18 @@ function ProviderCard({ provider, index }: { provider: ProviderData; index: numb
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
             <span className="text-xs font-medium text-white/90 truncate">{provider.nameZh}</span>
-            {/* 显示可用模型按钮 */}
-            {hasAvailableModels && (
+            {/* 显示隐藏模型按钮（包括隐藏的激活模型和可用模型） */}
+            {hasHiddenModels && (
               <button
-                onClick={() => setShowAvailable(!showAvailable)}
+                onClick={() => setShowAll(!showAll)}
                 className="text-[9px] px-1.5 py-0.5 rounded transition-colors cursor-pointer"
                 style={{
-                  background: showAvailable ? 'rgba(0, 240, 255, 0.2)' : 'rgba(255, 255, 255, 0.1)',
-                  color: showAvailable ? '#00F0FF' : 'rgba(255, 255, 255, 0.5)'
+                  background: showAll ? 'rgba(0, 240, 255, 0.2)' : 'rgba(255, 255, 255, 0.1)',
+                  color: showAll ? '#00F0FF' : 'rgba(255, 255, 255, 0.5)'
                 }}
-                title={showAvailable ? '隐藏可用模型' : `显示 ${availableModels.length} 个可用模型`}
+                title={showAll ? '收起隐藏的模型' : `显示 ${totalHiddenCount} 个隐藏模型`}
               >
-                {showAvailable ? '收起' : `+${availableModels.length}`}
+                {showAll ? '收起' : `+${totalHiddenCount}`}
               </button>
             )}
           </div>
@@ -412,12 +425,12 @@ function ProviderCard({ provider, index }: { provider: ProviderData; index: numb
         </div>
       </div>
 
-      {/* 模型列表 - 默认只显示激活的模型 */}
+      {/* 模型列表 - 默认只显示激活的模型（最多5个） */}
       <div className="relative">
         {provider.models.length > 0 ? (
           <div className="space-y-1">
-            {/* 激活的模型 */}
-            {activatedModels.map(model => (
+            {/* 激活的模型 - 默认只显示前5个 */}
+            {visibleActivatedModels.map(model => (
               <div key={model.id} className="flex items-center justify-between p-1.5 rounded-lg" style={{
                 background: 'rgba(0, 255, 102, 0.08)'
               }}>
@@ -431,8 +444,28 @@ function ProviderCard({ provider, index }: { provider: ProviderData; index: numb
               </div>
             ))}
             
-            {/* 可用的模型 - 默认隐藏，点击按钮显示 */}
-            {showAvailable && availableModels.map(model => (
+            {/* 隐藏的激活模型 - 点击按钮显示（仅当展开时且存在隐藏模型时渲染） */}
+            {showAll && hiddenActivatedModels.map(model => (
+              <motion.div
+                key={model.id}
+                className="flex items-center justify-between p-1.5 rounded-lg"
+                style={{ background: 'rgba(0, 255, 102, 0.08)' }}
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                exit={{ opacity: 0, height: 0 }}
+              >
+                <span className="text-[10px] text-white/70">{model.name}</span>
+                <span className="text-[9px] px-1.5 py-0.5 rounded-full" style={{
+                  background: 'rgba(0, 255, 102, 0.2)',
+                  color: '#00FF66'
+                }}>
+                  激活
+                </span>
+              </motion.div>
+            ))}
+            
+            {/* 可用的模型 - 点击按钮显示 */}
+            {showAll && availableModels.map(model => (
               <motion.div
                 key={model.id}
                 className="flex items-center justify-between p-1.5 rounded-lg"
