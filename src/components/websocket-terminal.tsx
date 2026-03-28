@@ -105,8 +105,27 @@ export function WebsocketTerminal() {
 
       try {
         // 根据服务器配置决定使用 ws:// 还是 wss:// 协议
-        const wsProtocol = gatewayTlsEnabled ? 'wss://' : 'ws://';
+        // 针对浏览器安全策略和自签名证书问题，实现更灵活的连接策略
+        let wsProtocol = 'ws://';
+
+        // 如果页面本身是 HTTPS 且服务器也启用了 TLS，使用 WSS
+        if (window.location.protocol === 'https:' && gatewayTlsEnabled) {
+          wsProtocol = 'wss://';
+        }
+        // 如果服务器启用了 TLS 但页面是 HTTP（例如访问本地 IP），在局域网环境中尝试 WSS
+        // 但为了避免混合内容错误，这里仍使用 WS
+        else if (gatewayTlsEnabled && window.location.protocol === 'http:') {
+          console.log('注意: 页面通过 HTTP 访问，但 OpenClaw 启用了 TLS.');
+          console.log('建议通过 HTTPS 访问以避免 WebSocket 连接问题.');
+          wsProtocol = 'ws://'; // 为避免混合内容错误暂时使用 ws
+        }
+        // 如果服务器没有启用 TLS，使用 WS
+        else if (!gatewayTlsEnabled) {
+          wsProtocol = 'ws://';
+        }
+
         const wsUrl = `${wsProtocol}${window.location.hostname}:${gatewayPort}`;
+        console.log(`尝试连接到: ${wsUrl}`);
         const ws = new WebSocket(wsUrl)
 
         ws.onopen = () => {
