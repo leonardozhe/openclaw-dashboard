@@ -158,7 +158,6 @@ export function WebsocketTerminal() {
               const clientId = capturedDeviceInfo.clientId || "gateway-client"  // 根据OpenClaw协议要求使用"gateway-client"
               const clientMode = capturedDeviceInfo.clientMode || "cli"         // 根据OpenClaw协议要求使用"cli"
               const platform = capturedDeviceInfo.platform || "darwin"          // 使用实际平台标识
-              const deviceScopes = capturedDeviceInfo.scopes || ["operator.read", "operator.admin", "operator.write"]
 
               // 获取设备ID，优先使用已配对的设备ID，否则从本地存储获取
               let deviceId: string | null = capturedDeviceInfo.deviceId || null
@@ -182,6 +181,7 @@ export function WebsocketTerminal() {
                 localStorage.setItem('openclaw-instance-id', instanceId)
               }
 
+              // 尝试使用最广泛的权限请求
               const connectParams: ConnectParams = {
                 minProtocol: 3,
                 maxProtocol: 3,
@@ -193,8 +193,12 @@ export function WebsocketTerminal() {
                   mode: clientMode,
                   instanceId: instanceId
                 },
-                role: "operator",
-                scopes: deviceScopes,
+                role: "operator", // operator 角色
+                scopes: [
+                  "operator.read",   // 读取权限
+                  "operator.write",  // 写入权限
+                  "operator.admin"   // 管理权限 (需要这个才能访问 channels)
+                ],
                 userAgent: navigator.userAgent || "MeetClaw-Terminal/1.0",
                 locale: "zh-CN",
                 device: deviceId ? {
@@ -443,9 +447,10 @@ export function WebsocketTerminal() {
         params: {}
       }
     } else if (command === 'channels' || command.startsWith('channels')) {
+      // channels 命令需要 admin 权限
       commandMsg = {
         type: "req",
-        method: "channels.list",
+        method: "channels.status",
         id: generateId(),
         params: {}
       }
