@@ -14,6 +14,7 @@ export async function GET() {
         error: 'OpenClaw configuration not found',
         gatewayToken: null,
         gatewayPort: 18789,
+        gatewayTlsEnabled: false,
         device: null
       });
     }
@@ -24,6 +25,7 @@ export async function GET() {
     // 获取 gateway 认证 token
     const gatewayToken = config?.gateway?.auth?.token || null;
     const gatewayPort = config?.gateway?.port || 18789;
+    const gatewayTlsEnabled = config?.gateway?.tls?.enabled || false;
 
     // 尝试读取已配对的设备信息
     let pairedDevice = null;
@@ -56,6 +58,7 @@ export async function GET() {
       success: true,
       gatewayToken,
       gatewayPort,
+      gatewayTlsEnabled,
       device: pairedDevice
     });
   } catch (error) {
@@ -65,6 +68,7 @@ export async function GET() {
       error: 'Failed to get gateway device info',
       gatewayToken: null,
       gatewayPort: 18789,
+      gatewayTlsEnabled: false,
       device: null
     });
   }

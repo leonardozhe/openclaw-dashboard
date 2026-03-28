@@ -75,17 +75,19 @@ export function WebsocketTerminal() {
       } = {}
       let gatewayPort = 18789
       let gatewayToken: string | null = null
+      let gatewayTlsEnabled = false  // TLS 启用状态
       
       try {
         // 获取 Gateway 配置（包含 gateway.auth.token）
         const deviceResponse = await fetch('/api/gateway-device')
         if (deviceResponse.ok) {
           const deviceData = await deviceResponse.json()
-          
+
           // Gateway token 用于 WebSocket 认证
           gatewayToken = deviceData.gatewayToken
           gatewayPort = deviceData.gatewayPort || 18789
-          
+          gatewayTlsEnabled = deviceData.gatewayTlsEnabled || false  // 获取 TLS 状态
+
           if (deviceData.success && deviceData.device) {
             deviceInfo = {
               deviceId: deviceData.device.deviceId,
@@ -102,9 +104,9 @@ export function WebsocketTerminal() {
       }
 
       try {
-        // 使用 localhost 而不是 127.0.0.1，因为 Control UI 需要 secure context
-        // localhost 被浏览器视为安全上下文，而 127.0.0.1 不是
-        const wsUrl = `ws://localhost:${gatewayPort}`
+        // 根据服务器配置决定使用 ws:// 还是 wss:// 协议
+        const wsProtocol = gatewayTlsEnabled ? 'wss://' : 'ws://';
+        const wsUrl = `${wsProtocol}${window.location.hostname}:${gatewayPort}`;
         const ws = new WebSocket(wsUrl)
 
         ws.onopen = () => {
