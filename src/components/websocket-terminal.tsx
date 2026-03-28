@@ -225,12 +225,29 @@ export function WebsocketTerminal() {
                 const grantedScopes = jsonData.payload?.grantedScopes || []
                 if (grantedScopes.length > 0) {
                   addTerminalLine(`📋 授权范围: ${grantedScopes.join(', ')}`, 'system')
-                  
-                  // 检查是否有写入权限
-                  if (!grantedScopes.includes('operator.write')) {
-                    addTerminalLine('⚠️ 当前连接缺少写入权限，部分命令可能无法执行', 'system')
-                    addTerminalLine('💡 提示: 如需完整功能，请在 OpenClaw 中配对新设备', 'system')
+
+                  // 检查是否有足够的权限执行命令
+                  const hasWritePermission = grantedScopes.includes('operator.write') || grantedScopes.includes('operator.admin');
+                  const hasReadPermission = grantedScopes.includes('operator.read') || grantedScopes.includes('operator.write') || grantedScopes.includes('operator.admin');
+
+                  if (hasReadPermission) {
+                    addTerminalLine('✅ 具备读取权限', 'system');
+                  } else {
+                    addTerminalLine('⚠️ 缺少读取权限，部分命令可能无法执行', 'system');
                   }
+
+                  if (hasWritePermission) {
+                    addTerminalLine('✅ 具备写入权限', 'system');
+                  } else {
+                    addTerminalLine('⚠️ 缺少写入权限，执行修改操作的命令将被拒绝', 'system');
+                  }
+
+                  // 存储权限信息供后续命令使用
+                  localStorage.setItem('openclaw-permissions', JSON.stringify({
+                    read: hasReadPermission,
+                    write: hasWritePermission,
+                    scopes: grantedScopes
+                  }));
                 }
                 
                 // 显示服务器信息
@@ -374,6 +391,36 @@ export function WebsocketTerminal() {
       return
     }
 
+    // 检查权限
+    const permissionsStr = localStorage.getItem('openclaw-permissions');
+    let hasReadPermission = true; // 默认允许，如果无法确定权限
+    let hasWritePermission = true; // 默认允许，如果无法确定权限
+
+    if (permissionsStr) {
+      try {
+        const permissions = JSON.parse(permissionsStr);
+        hasReadPermission = permissions.read || false;
+        hasWritePermission = permissions.write || false;
+      } catch (e) {
+        console.warn('Could not parse permissions:', e);
+      }
+    }
+
+    // 根据命令类型检查所需权限
+    const isWriteCommand = command.includes('create') || command.includes('delete') || command.includes('update') || command.includes('set') || command.includes('modify');
+
+    if (isWriteCommand && !hasWritePermission) {
+      addTerminalLine(`⚠️ 权限不足: 当前连接不允许执行修改操作 "${command}"`, 'error');
+      addTerminalLine('💡 提示: 请使用具有管理员权限的账户重新配对设备', 'system');
+      return;
+    }
+
+    if (!hasReadPermission && !isWriteCommand) {
+      addTerminalLine(`⚠️ 权限不足: 当前连接不允许执行读取操作 "${command}"`, 'error');
+      addTerminalLine('💡 提示: 请使用具有读取权限的账户重新配对设备', 'system');
+      return;
+    }
+
     // 生成唯一的命令ID
     const generateId = () => `cmd-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
 
@@ -457,6 +504,36 @@ export function WebsocketTerminal() {
     if (connectionStatus !== 'connected') {
       addTerminalLine('WebSocket 连接未就绪', 'error')
       return
+    }
+
+    // 检查权限
+    const permissionsStr = localStorage.getItem('openclaw-permissions');
+    let hasReadPermission = true; // 默认允许，如果无法确定权限
+    let hasWritePermission = true; // 默认允许，如果无法确定权限
+
+    if (permissionsStr) {
+      try {
+        const permissions = JSON.parse(permissionsStr);
+        hasReadPermission = permissions.read || false;
+        hasWritePermission = permissions.write || false;
+      } catch (e) {
+        console.warn('Could not parse permissions:', e);
+      }
+    }
+
+    // 根据命令类型检查所需权限
+    const isWriteCommand = cmd.includes('create') || cmd.includes('delete') || cmd.includes('update') || cmd.includes('set') || cmd.includes('modify');
+
+    if (isWriteCommand && !hasWritePermission) {
+      addTerminalLine(`⚠️ 权限不足: 当前连接不允许执行修改操作 "${cmd}"`, 'error');
+      addTerminalLine('💡 提示: 请使用具有管理员权限的账户重新配对设备', 'system');
+      return;
+    }
+
+    if (!hasReadPermission && !isWriteCommand) {
+      addTerminalLine(`⚠️ 权限不足: 当前连接不允许执行读取操作 "${cmd}"`, 'error');
+      addTerminalLine('💡 提示: 请使用具有读取权限的账户重新配对设备', 'system');
+      return;
     }
 
     setInputCommand(cmd)
