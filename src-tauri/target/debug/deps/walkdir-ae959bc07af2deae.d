@@ -1,0 +1,10 @@
+/Users/leon/Documents/Development/openclaw/meetclaw-open/src-tauri/target/debug/deps/walkdir-ae959bc07af2deae.d: /Users/leon/.cargo/registry/src/mirrors.tuna.tsinghua.edu.cn-e791a3f93f26854f/walkdir-2.5.0/src/lib.rs /Users/leon/.cargo/registry/src/mirrors.tuna.tsinghua.edu.cn-e791a3f93f26854f/walkdir-2.5.0/src/dent.rs /Users/leon/.cargo/registry/src/mirrors.tuna.tsinghua.edu.cn-e791a3f93f26854f/walkdir-2.5.0/src/error.rs /Users/leon/.cargo/registry/src/mirrors.tuna.tsinghua.edu.cn-e791a3f93f26854f/walkdir-2.5.0/src/util.rs
+
+/Users/leon/Documents/Development/openclaw/meetclaw-open/src-tauri/target/debug/deps/libwalkdir-ae959bc07af2deae.rlib: /Users/leon/.cargo/registry/src/mirrors.tuna.tsinghua.edu.cn-e791a3f93f26854f/walkdir-2.5.0/src/lib.rs /Users/leon/.cargo/registry/src/mirrors.tuna.tsinghua.edu.cn-e791a3f93f26854f/walkdir-2.5.0/src/dent.rs /Users/leon/.cargo/registry/src/mirrors.tuna.tsinghua.edu.cn-e791a3f93f26854f/walkdir-2.5.0/src/error.rs /Users/leon/.cargo/registry/src/mirrors.tuna.tsinghua.edu.cn-e791a3f93f26854f/walkdir-2.5.0/src/util.rs
+
+/Users/leon/Documents/Development/openclaw/meetclaw-open/src-tauri/target/debug/deps/libwalkdir-ae959bc07af2deae.rmeta: /Users/leon/.cargo/registry/src/mirrors.tuna.tsinghua.edu.cn-e791a3f93f26854f/walkdir-2.5.0/src/lib.rs /Users/leon/.cargo/registry/src/mirrors.tuna.tsinghua.edu.cn-e791a3f93f26854f/walkdir-2.5.0/src/dent.rs /Users/leon/.cargo/registry/src/mirrors.tuna.tsinghua.edu.cn-e791a3f93f26854f/walkdir-2.5.0/src/error.rs /Users/leon/.cargo/registry/src/mirrors.tuna.tsinghua.edu.cn-e791a3f93f26854f/walkdir-2.5.0/src/util.rs
+
+/Users/leon/.cargo/registry/src/mirrors.tuna.tsinghua.edu.cn-e791a3f93f26854f/walkdir-2.5.0/src/lib.rs:
+/Users/leon/.cargo/registry/src/mirrors.tuna.tsinghua.edu.cn-e791a3f93f26854f/walkdir-2.5.0/src/dent.rs:
+/Users/leon/.cargo/registry/src/mirrors.tuna.tsinghua.edu.cn-e791a3f93f26854f/walkdir-2.5.0/src/error.rs:
+/Users/leon/.cargo/registry/src/mirrors.tuna.tsinghua.edu.cn-e791a3f93f26854f/walkdir-2.5.0/src/util.rs:

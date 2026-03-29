@@ -1,0 +1,10 @@
+/Users/leon/Documents/Development/openclaw/meetclaw-open/src-tauri/target/debug/deps/ppv_lite86-0ed19d3a1e6c92d8.d: /Users/leon/.cargo/registry/src/mirrors.tuna.tsinghua.edu.cn-e791a3f93f26854f/ppv-lite86-0.2.21/src/lib.rs /Users/leon/.cargo/registry/src/mirrors.tuna.tsinghua.edu.cn-e791a3f93f26854f/ppv-lite86-0.2.21/src/soft.rs /Users/leon/.cargo/registry/src/mirrors.tuna.tsinghua.edu.cn-e791a3f93f26854f/ppv-lite86-0.2.21/src/types.rs /Users/leon/.cargo/registry/src/mirrors.tuna.tsinghua.edu.cn-e791a3f93f26854f/ppv-lite86-0.2.21/src/generic.rs
+
+/Users/leon/Documents/Development/openclaw/meetclaw-open/src-tauri/target/debug/deps/libppv_lite86-0ed19d3a1e6c92d8.rlib: /Users/leon/.cargo/registry/src/mirrors.tuna.tsinghua.edu.cn-e791a3f93f26854f/ppv-lite86-0.2.21/src/lib.rs /Users/leon/.cargo/registry/src/mirrors.tuna.tsinghua.edu.cn-e791a3f93f26854f/ppv-lite86-0.2.21/src/soft.rs /Users/leon/.cargo/registry/src/mirrors.tuna.tsinghua.edu.cn-e791a3f93f26854f/ppv-lite86-0.2.21/src/types.rs /Users/leon/.cargo/registry/src/mirrors.tuna.tsinghua.edu.cn-e791a3f93f26854f/ppv-lite86-0.2.21/src/generic.rs
+
+/Users/leon/Documents/Development/openclaw/meetclaw-open/src-tauri/target/debug/deps/libppv_lite86-0ed19d3a1e6c92d8.rmeta: /Users/leon/.cargo/registry/src/mirrors.tuna.tsinghua.edu.cn-e791a3f93f26854f/ppv-lite86-0.2.21/src/lib.rs /Users/leon/.cargo/registry/src/mirrors.tuna.tsinghua.edu.cn-e791a3f93f26854f/ppv-lite86-0.2.21/src/soft.rs /Users/leon/.cargo/registry/src/mirrors.tuna.tsinghua.edu.cn-e791a3f93f26854f/ppv-lite86-0.2.21/src/types.rs /Users/leon/.cargo/registry/src/mirrors.tuna.tsinghua.edu.cn-e791a3f93f26854f/ppv-lite86-0.2.21/src/generic.rs
+
+/Users/leon/.cargo/registry/src/mirrors.tuna.tsinghua.edu.cn-e791a3f93f26854f/ppv-lite86-0.2.21/src/lib.rs:
+/Users/leon/.cargo/registry/src/mirrors.tuna.tsinghua.edu.cn-e791a3f93f26854f/ppv-lite86-0.2.21/src/soft.rs:
+/Users/leon/.cargo/registry/src/mirrors.tuna.tsinghua.edu.cn-e791a3f93f26854f/ppv-lite86-0.2.21/src/types.rs:
+/Users/leon/.cargo/registry/src/mirrors.tuna.tsinghua.edu.cn-e791a3f93f26854f/ppv-lite86-0.2.21/src/generic.rs:

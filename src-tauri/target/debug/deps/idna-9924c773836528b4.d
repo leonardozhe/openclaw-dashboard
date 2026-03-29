@@ -1,0 +1,10 @@
+/Users/leon/Documents/Development/openclaw/meetclaw-open/src-tauri/target/debug/deps/idna-9924c773836528b4.d: /Users/leon/.cargo/registry/src/mirrors.tuna.tsinghua.edu.cn-e791a3f93f26854f/idna-1.1.0/src/lib.rs /Users/leon/.cargo/registry/src/mirrors.tuna.tsinghua.edu.cn-e791a3f93f26854f/idna-1.1.0/src/deprecated.rs /Users/leon/.cargo/registry/src/mirrors.tuna.tsinghua.edu.cn-e791a3f93f26854f/idna-1.1.0/src/punycode.rs /Users/leon/.cargo/registry/src/mirrors.tuna.tsinghua.edu.cn-e791a3f93f26854f/idna-1.1.0/src/uts46.rs
+
+/Users/leon/Documents/Development/openclaw/meetclaw-open/src-tauri/target/debug/deps/libidna-9924c773836528b4.rlib: /Users/leon/.cargo/registry/src/mirrors.tuna.tsinghua.edu.cn-e791a3f93f26854f/idna-1.1.0/src/lib.rs /Users/leon/.cargo/registry/src/mirrors.tuna.tsinghua.edu.cn-e791a3f93f26854f/idna-1.1.0/src/deprecated.rs /Users/leon/.cargo/registry/src/mirrors.tuna.tsinghua.edu.cn-e791a3f93f26854f/idna-1.1.0/src/punycode.rs /Users/leon/.cargo/registry/src/mirrors.tuna.tsinghua.edu.cn-e791a3f93f26854f/idna-1.1.0/src/uts46.rs
+
+/Users/leon/Documents/Development/openclaw/meetclaw-open/src-tauri/target/debug/deps/libidna-9924c773836528b4.rmeta: /Users/leon/.cargo/registry/src/mirrors.tuna.tsinghua.edu.cn-e791a3f93f26854f/idna-1.1.0/src/lib.rs /Users/leon/.cargo/registry/src/mirrors.tuna.tsinghua.edu.cn-e791a3f93f26854f/idna-1.1.0/src/deprecated.rs /Users/leon/.cargo/registry/src/mirrors.tuna.tsinghua.edu.cn-e791a3f93f26854f/idna-1.1.0/src/punycode.rs /Users/leon/.cargo/registry/src/mirrors.tuna.tsinghua.edu.cn-e791a3f93f26854f/idna-1.1.0/src/uts46.rs
+
+/Users/leon/.cargo/registry/src/mirrors.tuna.tsinghua.edu.cn-e791a3f93f26854f/idna-1.1.0/src/lib.rs:
+/Users/leon/.cargo/registry/src/mirrors.tuna.tsinghua.edu.cn-e791a3f93f26854f/idna-1.1.0/src/deprecated.rs:
+/Users/leon/.cargo/registry/src/mirrors.tuna.tsinghua.edu.cn-e791a3f93f26854f/idna-1.1.0/src/punycode.rs:
+/Users/leon/.cargo/registry/src/mirrors.tuna.tsinghua.edu.cn-e791a3f93f26854f/idna-1.1.0/src/uts46.rs:

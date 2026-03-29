@@ -22,7 +22,7 @@ import {
   GlitchEffect
 } from '@/components/voice-animations'
 import { ChatInput, MessageList } from '@/components/chat-input'
-import { WebsocketTerminal } from '@/components/websocket-terminal'
+import { SmartTerminal } from '@/components/smart-terminal'
 import { contacts, Contact, Message, getAIResponse, cn } from '@/lib/utils'
 
 // Channel 数据类型
@@ -428,16 +428,9 @@ export default function Home() {
           {/* 系统状态卡片 */}
           <SystemStatusCards />
 
-          {/* OpenClaw TUI 终端 */}
+          {/* OpenClaw 智能终端 */}
           <div className="px-4 py-3">
-            <WebsocketTerminal />
-          </div>
-
-          {/* 说明信息 */}
-          <div className="px-4 pb-4">
-            <div className="text-xs text-gray-500 text-center">
-              通过 WebSocket 连接到 OpenClaw 服务，可实时查看和控制 OpenClaw 系统状态
-            </div>
+            <SmartTerminal />
           </div>
           
           

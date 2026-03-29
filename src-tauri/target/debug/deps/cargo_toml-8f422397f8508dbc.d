@@ -1,0 +1,10 @@
+/Users/leon/Documents/Development/openclaw/meetclaw-open/src-tauri/target/debug/deps/cargo_toml-8f422397f8508dbc.d: /Users/leon/.cargo/registry/src/mirrors.tuna.tsinghua.edu.cn-e791a3f93f26854f/cargo_toml-0.22.3/src/cargo_toml.rs /Users/leon/.cargo/registry/src/mirrors.tuna.tsinghua.edu.cn-e791a3f93f26854f/cargo_toml-0.22.3/src/afs.rs /Users/leon/.cargo/registry/src/mirrors.tuna.tsinghua.edu.cn-e791a3f93f26854f/cargo_toml-0.22.3/src/error.rs /Users/leon/.cargo/registry/src/mirrors.tuna.tsinghua.edu.cn-e791a3f93f26854f/cargo_toml-0.22.3/src/inheritable.rs
+
+/Users/leon/Documents/Development/openclaw/meetclaw-open/src-tauri/target/debug/deps/libcargo_toml-8f422397f8508dbc.rlib: /Users/leon/.cargo/registry/src/mirrors.tuna.tsinghua.edu.cn-e791a3f93f26854f/cargo_toml-0.22.3/src/cargo_toml.rs /Users/leon/.cargo/registry/src/mirrors.tuna.tsinghua.edu.cn-e791a3f93f26854f/cargo_toml-0.22.3/src/afs.rs /Users/leon/.cargo/registry/src/mirrors.tuna.tsinghua.edu.cn-e791a3f93f26854f/cargo_toml-0.22.3/src/error.rs /Users/leon/.cargo/registry/src/mirrors.tuna.tsinghua.edu.cn-e791a3f93f26854f/cargo_toml-0.22.3/src/inheritable.rs
+
+/Users/leon/Documents/Development/openclaw/meetclaw-open/src-tauri/target/debug/deps/libcargo_toml-8f422397f8508dbc.rmeta: /Users/leon/.cargo/registry/src/mirrors.tuna.tsinghua.edu.cn-e791a3f93f26854f/cargo_toml-0.22.3/src/cargo_toml.rs /Users/leon/.cargo/registry/src/mirrors.tuna.tsinghua.edu.cn-e791a3f93f26854f/cargo_toml-0.22.3/src/afs.rs /Users/leon/.cargo/registry/src/mirrors.tuna.tsinghua.edu.cn-e791a3f93f26854f/cargo_toml-0.22.3/src/error.rs /Users/leon/.cargo/registry/src/mirrors.tuna.tsinghua.edu.cn-e791a3f93f26854f/cargo_toml-0.22.3/src/inheritable.rs
+
+/Users/leon/.cargo/registry/src/mirrors.tuna.tsinghua.edu.cn-e791a3f93f26854f/cargo_toml-0.22.3/src/cargo_toml.rs:
+/Users/leon/.cargo/registry/src/mirrors.tuna.tsinghua.edu.cn-e791a3f93f26854f/cargo_toml-0.22.3/src/afs.rs:
+/Users/leon/.cargo/registry/src/mirrors.tuna.tsinghua.edu.cn-e791a3f93f26854f/cargo_toml-0.22.3/src/error.rs:
+/Users/leon/.cargo/registry/src/mirrors.tuna.tsinghua.edu.cn-e791a3f93f26854f/cargo_toml-0.22.3/src/inheritable.rs:

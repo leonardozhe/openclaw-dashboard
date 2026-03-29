@@ -1,0 +1,9 @@
+/Users/leon/Documents/Development/openclaw/meetclaw-open-tauri-in-progress/src-tauri/target/debug/deps/tauri_runtime-7a73079a12139090.d: /Users/leon/.cargo/registry/src/mirrors.tuna.tsinghua.edu.cn-e791a3f93f26854f/tauri-runtime-2.10.1/src/lib.rs /Users/leon/.cargo/registry/src/mirrors.tuna.tsinghua.edu.cn-e791a3f93f26854f/tauri-runtime-2.10.1/src/dpi.rs /Users/leon/.cargo/registry/src/mirrors.tuna.tsinghua.edu.cn-e791a3f93f26854f/tauri-runtime-2.10.1/src/monitor.rs /Users/leon/.cargo/registry/src/mirrors.tuna.tsinghua.edu.cn-e791a3f93f26854f/tauri-runtime-2.10.1/src/webview.rs /Users/leon/.cargo/registry/src/mirrors.tuna.tsinghua.edu.cn-e791a3f93f26854f/tauri-runtime-2.10.1/src/window.rs
+
+/Users/leon/Documents/Development/openclaw/meetclaw-open-tauri-in-progress/src-tauri/target/debug/deps/libtauri_runtime-7a73079a12139090.rmeta: /Users/leon/.cargo/registry/src/mirrors.tuna.tsinghua.edu.cn-e791a3f93f26854f/tauri-runtime-2.10.1/src/lib.rs /Users/leon/.cargo/registry/src/mirrors.tuna.tsinghua.edu.cn-e791a3f93f26854f/tauri-runtime-2.10.1/src/dpi.rs /Users/leon/.cargo/registry/src/mirrors.tuna.tsinghua.edu.cn-e791a3f93f26854f/tauri-runtime-2.10.1/src/monitor.rs /Users/leon/.cargo/registry/src/mirrors.tuna.tsinghua.edu.cn-e791a3f93f26854f/tauri-runtime-2.10.1/src/webview.rs /Users/leon/.cargo/registry/src/mirrors.tuna.tsinghua.edu.cn-e791a3f93f26854f/tauri-runtime-2.10.1/src/window.rs
+
+/Users/leon/.cargo/registry/src/mirrors.tuna.tsinghua.edu.cn-e791a3f93f26854f/tauri-runtime-2.10.1/src/lib.rs:
+/Users/leon/.cargo/registry/src/mirrors.tuna.tsinghua.edu.cn-e791a3f93f26854f/tauri-runtime-2.10.1/src/dpi.rs:
+/Users/leon/.cargo/registry/src/mirrors.tuna.tsinghua.edu.cn-e791a3f93f26854f/tauri-runtime-2.10.1/src/monitor.rs:
+/Users/leon/.cargo/registry/src/mirrors.tuna.tsinghua.edu.cn-e791a3f93f26854f/tauri-runtime-2.10.1/src/webview.rs:
+/Users/leon/.cargo/registry/src/mirrors.tuna.tsinghua.edu.cn-e791a3f93f26854f/tauri-runtime-2.10.1/src/window.rs:
