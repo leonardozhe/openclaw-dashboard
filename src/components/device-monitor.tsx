@@ -2,7 +2,7 @@
 
 import { motion } from 'framer-motion'
 import { useState, useEffect, useCallback } from 'react'
-import { Server, Brain, Cpu, HardDrive, ArrowDown, ArrowUp, Monitor } from 'lucide-react'
+import { Server, Brain, Cpu, HardDrive, ArrowDown, ArrowUp, Monitor, RefreshCw } from 'lucide-react'
 import { VoiceVisualizer } from './voice-visualizer'
 import { OpenClawStatusCard } from './openclaw-status-card'
 
@@ -196,9 +196,54 @@ function LocalMachineCard({ data }: { data: RealSystemData | null }) {
         initial={{ opacity: 0, x: -20 }}
         animate={{ opacity: 1, x: 0 }}
       >
-        <div className="flex items-center justify-center py-8">
-          <Monitor className="w-6 h-6 text-cyan-400 animate-pulse" />
-          <span className="ml-2 text-white/60">正在获取系统信息...</span>
+        <div className="flex items-center justify-center py-4">
+          {/* 炫酷的加载动画 */}
+          <div className="relative flex items-center justify-center">
+            <motion.div
+              className="w-4 h-4 rounded-full"
+              style={{ backgroundColor: '#00F0FF' }}
+              animate={{
+                scale: [1, 1.2, 1],
+                opacity: [0.5, 1, 0.5]
+              }}
+              transition={{
+                duration: 1.5,
+                repeat: Infinity,
+                ease: "easeInOut"
+              }}
+            />
+            <motion.div
+              className="w-4 h-4 rounded-full absolute"
+              style={{ backgroundColor: '#FF00FF' }}
+              animate={{
+                scale: [1, 1.2, 1],
+                opacity: [0.5, 1, 0.5],
+                rotate: 120
+              }}
+              transition={{
+                duration: 1.5,
+                repeat: Infinity,
+                ease: "easeInOut",
+                delay: 0.2
+              }}
+            />
+            <motion.div
+              className="w-4 h-4 rounded-full absolute"
+              style={{ backgroundColor: '#00FF66' }}
+              animate={{
+                scale: [1, 1.2, 1],
+                opacity: [0.5, 1, 0.5],
+                rotate: 240
+              }}
+              transition={{
+                duration: 1.5,
+                repeat: Infinity,
+                ease: "easeInOut",
+                delay: 0.4
+              }}
+            />
+          </div>
+          <span className="ml-3 text-white/60 text-xs">正在获取系统信息...</span>
         </div>
       </motion.div>
     )
@@ -525,7 +570,7 @@ export function DeviceMonitor() {
     }
   }, [])
 
-  // 获取供应商信息
+  // 获取供应商信息（不包括延迟）
   const fetchProviders = useCallback(async () => {
     try {
       const response = await fetch('/api/providers')
@@ -538,19 +583,83 @@ export function DeviceMonitor() {
     }
   }, [])
 
+  // 重新测量延迟（高频更新部分）
+  const refreshLatencies = useCallback(async () => {
+    try {
+      // 获取当前所有供应商的基础信息
+      const response = await fetch('/api/providers')
+      const data = await response.json()
+
+      if (data.providers) {
+        // 仅更新延迟部分，保持其他数据不变
+        const updatedProviders = await Promise.all(data.providers.map(async (originalProvider: ProviderData) => {
+          // 重新测量延迟
+          let newLatency = null;
+          if (originalProvider.baseUrl) {
+            try {
+              const startTime = Date.now();
+              const controller = new AbortController()
+              const timeoutId = setTimeout(() => controller.abort(), 5000) // 5秒超时
+
+              const testUrl = originalProvider.baseUrl.endsWith('/')
+                ? originalProvider.baseUrl.slice(0, -1)
+                : originalProvider.baseUrl
+
+              await fetch(`${testUrl}/models`, {
+                method: 'HEAD',
+                signal: controller.signal,
+                headers: {
+                  'Content-Type': 'application/json'
+                }
+              }).catch(() => {
+                // 如果 HEAD 失败，尝试 GET
+                return fetch(testUrl, {
+                  method: 'GET',
+                  signal: controller.signal
+                }).catch(() => null)
+              })
+
+              clearTimeout(timeoutId)
+              newLatency = Date.now() - startTime
+            } catch (err) {
+              newLatency = null
+            }
+          }
+
+          // 保持原始的提供商其他信息，只更新延迟
+          return {
+            ...originalProvider,
+            latency: newLatency
+          }
+        }))
+
+        setProviders(updatedProviders)
+      }
+    } catch (error) {
+      console.error('Failed to refresh latencies:', error)
+    }
+  }, [])
+
   // 初始加载和定时刷新
   useEffect(() => {
+    // 初始化所有数据
     fetchSystemInfo()
     fetchProviders()
-    
-    // 每 30 秒刷新一次
-    const interval = setInterval(() => {
+
+    // 每 15 分钟刷新一次完整信息（包含 token、版本、安全审计等）
+    const fullRefreshInterval = setInterval(() => {
       fetchSystemInfo()
       fetchProviders()
-    }, 30000)
-    
-    return () => clearInterval(interval)
-  }, [fetchSystemInfo, fetchProviders])
+    }, 900000) // 15 分钟 = 15 * 60 * 1000 毫秒
+
+    // 每 3 秒刷新一次延迟信息
+    const latencyRefreshInterval = setInterval(refreshLatencies, 3000) // 3 秒 = 3000 毫秒
+
+    return () => {
+      clearInterval(fullRefreshInterval)
+      clearInterval(latencyRefreshInterval)
+    }
+  }, [fetchSystemInfo, fetchProviders, refreshLatencies])
 
   // 统计使用中的模型数量
   const inUseCount = providers.filter(p => p.models.some(m => m.inUse)).length

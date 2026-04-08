@@ -22,12 +22,13 @@ export async function GET() {
     const configContent = readFileSync(configPath, 'utf-8');
     const config = JSON.parse(configContent);
 
-    // 获取 gateway 认证 token
+    // 获取 gateway 认证配置
+    const gatewayAuthMode = config?.gateway?.auth?.mode || 'token'; // none, token, password, trusted-proxy
     const gatewayToken = config?.gateway?.auth?.token || null;
     const gatewayPort = config?.gateway?.port || 18789;
     const gatewayTlsEnabled = config?.gateway?.tls?.enabled || false;
 
-    // 尝试读取已配对的设备信息
+    // 尝试读取已配对的设备信息（用于获取设备 token 作为备用）
     let pairedDevice = null;
     const devicesPath = join(homedir(), '.openclaw', 'devices', 'paired.json');
 
@@ -36,18 +37,44 @@ export async function GET() {
         const devicesContent = readFileSync(devicesPath, 'utf-8');
         const devices = JSON.parse(devicesContent);
 
-        // 获取最新的已配对设备
-        if (Array.isArray(devices) && devices.length > 0) {
-          // 取第一个设备作为当前设备（或者可以使用特定逻辑选择）
-          const device = devices[0];
-          pairedDevice = {
-            deviceId: device.id,
-            clientId: device.client?.id || 'gateway-client',
-            clientMode: device.client?.mode || 'cli',
-            platform: device.client?.platform || 'darwin',
-            token: device.token || null,
-            scopes: device.scopes || ['operator.read', 'operator.admin', 'operator.write']
-          };
+        // paired.json 是一个对象，key 是 deviceId
+        // 获取最新的已配对设备（取第一个 key）
+        if (typeof devices === 'object' && devices !== null) {
+          const deviceIds = Object.keys(devices);
+          if (deviceIds.length > 0) {
+            // 优先选择有 operator.write 权限的设备
+            let selectedDeviceId: string | null = null;
+            let selectedDevice = null;
+            for (const id of deviceIds) {
+              const device = devices[id];
+              const hasWriteScope = device?.tokens?.operator?.scopes?.includes('operator.write') ||
+                                    device?.scopes?.includes('operator.write');
+              if (hasWriteScope) {
+                selectedDeviceId = id;
+                selectedDevice = device;
+                break;
+              }
+            }
+            
+            // 如果没有找到有写入权限的设备，使用第一个设备
+            if (!selectedDevice) {
+              selectedDeviceId = deviceIds[0];
+              selectedDevice = devices[selectedDeviceId];
+            }
+
+            if (selectedDevice && selectedDeviceId) {
+              // Token 认证模式：只需要设备 token，不需要私钥/公钥
+              pairedDevice = {
+                deviceId: selectedDevice.deviceId || selectedDeviceId,
+                instanceId: selectedDevice.deviceId || selectedDeviceId,
+                clientId: selectedDevice.clientId || 'gateway-client',
+                clientMode: selectedDevice.clientMode || 'backend',
+                platform: selectedDevice.platform || 'darwin',
+                token: selectedDevice.tokens?.operator?.token || null,
+                scopes: selectedDevice.tokens?.operator?.scopes || selectedDevice.scopes || ['operator.read']
+              };
+            }
+          }
         }
       } catch (e) {
         console.warn('Could not read paired devices:', e);
@@ -56,6 +83,7 @@ export async function GET() {
 
     return NextResponse.json({
       success: true,
+      gatewayAuthMode, // 返回认证模式
       gatewayToken,
       gatewayPort,
       gatewayTlsEnabled,

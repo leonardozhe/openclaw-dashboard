@@ -65,11 +65,58 @@ export function OpenClawStatusCard() {
     }
   }, [])
 
+  // 单独获取并更新token数据
+  const fetchTokenData = useCallback(async () => {
+    try {
+      const response = await fetch('/api/openclaw-status')
+      const data = await response.json()
+      if (data.sessions?.contextTokens !== undefined && status) {
+        setStatus(prev => prev ? {
+          ...prev,
+          sessions: {
+            ...prev.sessions,
+            contextTokens: data.sessions.contextTokens,
+            totalTokens: data.sessions.totalTokens,
+            sessionTokens: data.sessions.sessionTokens,
+            last30DaysTokens: data.sessions.last30DaysTokens
+          }
+        } : null)
+      }
+    } catch (error) {
+      console.error('Failed to fetch token data:', error)
+    }
+  }, [status])
+
+  // 单独获取版本和安全审计信息
+  const fetchVersionAndSecurity = useCallback(async () => {
+    try {
+      const response = await fetch('/api/openclaw-status')
+      const data = await response.json()
+      if (status && (data.version || data.securityAudit)) {
+        setStatus(prev => prev ? {
+          ...prev,
+          version: data.version || prev.version,
+          latestVersion: data.latestVersion || prev.latestVersion,
+          securityAudit: data.securityAudit || prev.securityAudit
+        } : null)
+      }
+    } catch (error) {
+      console.error('Failed to fetch version and security data:', error)
+    }
+  }, [status])
+
   useEffect(() => {
     fetchStatus()
-    const interval = setInterval(fetchStatus, 60000) // 每 1 分钟刷新一次
-    return () => clearInterval(interval)
-  }, [fetchStatus])
+    // 每 15 分钟刷新一次版本和安全审计信息（静态数据）
+    const versionRefreshInterval = setInterval(fetchVersionAndSecurity, 900000) // 15 分钟 = 15 * 60 * 1000 毫秒
+    // 每 30 秒刷新一次token数据（动态信息）
+    const tokenRefreshInterval = setInterval(fetchTokenData, 30000) // 30 秒 = 30 * 1000 毫秒
+
+    return () => {
+      clearInterval(versionRefreshInterval)
+      clearInterval(tokenRefreshInterval)
+    }
+  }, [fetchStatus, fetchTokenData, fetchVersionAndSecurity])
 
   const handleOpenDashboard = () => {
     if (status?.dashboard) {
@@ -206,8 +253,53 @@ export function OpenClawStatusCard() {
         animate={{ opacity: 1, y: 0 }}
       >
         <div className="flex items-center justify-center py-4">
-          <RefreshCw className="w-4 h-4 text-cyan-400 animate-spin" />
-          <span className="ml-2 text-white/60 text-xs">正在获取状态...</span>
+          {/* 炫酷的加载动画 */}
+          <div className="relative flex items-center justify-center">
+            <motion.div
+              className="w-4 h-4 rounded-full"
+              style={{ backgroundColor: '#00F0FF' }}
+              animate={{
+                scale: [1, 1.2, 1],
+                opacity: [0.5, 1, 0.5]
+              }}
+              transition={{
+                duration: 1.5,
+                repeat: Infinity,
+                ease: "easeInOut"
+              }}
+            />
+            <motion.div
+              className="w-4 h-4 rounded-full absolute"
+              style={{ backgroundColor: '#FF00FF' }}
+              animate={{
+                scale: [1, 1.2, 1],
+                opacity: [0.5, 1, 0.5],
+                rotate: 120
+              }}
+              transition={{
+                duration: 1.5,
+                repeat: Infinity,
+                ease: "easeInOut",
+                delay: 0.2
+              }}
+            />
+            <motion.div
+              className="w-4 h-4 rounded-full absolute"
+              style={{ backgroundColor: '#00FF66' }}
+              animate={{
+                scale: [1, 1.2, 1],
+                opacity: [0.5, 1, 0.5],
+                rotate: 240
+              }}
+              transition={{
+                duration: 1.5,
+                repeat: Infinity,
+                ease: "easeInOut",
+                delay: 0.4
+              }}
+            />
+          </div>
+          <span className="ml-3 text-white/60 text-xs">正在获取状态...</span>
         </div>
       </motion.div>
     )
@@ -259,7 +351,7 @@ export function OpenClawStatusCard() {
                 <svg className="w-2.5 h-2.5 text-cyan-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                   <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
                 </svg>
-                <span className="text-white/40">Token 消耗</span>
+                <span className="text-white/40">消息/Token</span>
               </div>
               <div className="flex items-center gap-1">
                 {/* 旋转齿轮动画图标 */}
@@ -281,6 +373,21 @@ export function OpenClawStatusCard() {
                 </motion.svg>
                 <span className="text-[9px] font-mono text-cyan-400">{formatNumber(status.sessions.contextTokens)}</span>
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* Token 未统计提示 */}
+        {(!status?.sessions?.contextTokens || status.sessions.contextTokens === 0) && (
+          <div className="mb-2 p-1.5 rounded-lg" style={{ background: 'rgba(107, 114, 128, 0.1)' }}>
+            <div className="flex justify-between items-center text-[10px]">
+              <div className="flex items-center gap-1">
+                <svg className="w-2.5 h-2.5 text-gray-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+                </svg>
+                <span className="text-white/40">消息/Token</span>
+              </div>
+              <span className="text-[9px] font-mono text-gray-500">未统计</span>
             </div>
           </div>
         )}

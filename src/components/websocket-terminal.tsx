@@ -14,7 +14,7 @@ interface TerminalLine {
 interface OpenClawCommand {
   command: string
   description: string
-  category: 'status' | 'agent' | 'channel' | 'gateway' | 'memory' | 'system' | 'help'
+  category: 'status' | 'config' | 'session' | 'model' | 'agent' | 'channel' | 'node' | 'memory' | 'logs' | 'cron' | 'skills' | 'device' | 'update' | 'system' | 'help'
 }
 
 export function WebsocketTerminal() {
@@ -42,7 +42,7 @@ export function WebsocketTerminal() {
   const addTerminalLine = (content: string, type: 'input' | 'output' | 'system' | 'error' = 'output') => {
     setTerminalLines(prev => {
       const newLine: TerminalLine = {
-        id: Date.now().toString(),
+        id: `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
         content,
         timestamp: Date.now(),
         type
@@ -58,7 +58,7 @@ export function WebsocketTerminal() {
   // WebSocket 连接管理
   useEffect(() => {
     let reconnectTimeout: NodeJS.Timeout | null = null
-    const reconnectInterval = 5000 // 5秒重连间隔
+    const reconnectInterval = 5000 // 5 秒重连间隔
 
     const connect = async () => {
       setIsLoading(true)
@@ -67,6 +67,9 @@ export function WebsocketTerminal() {
       // 先从 API 获取 Gateway 认证信息和设备信息
       let deviceInfo: {
         deviceId?: string
+        instanceId?: string
+        publicKey?: string  // 关键：公钥用于设备身份验证
+        privateKey?: string  // 私钥用于挑战响应签名
         clientId?: string
         clientMode?: string
         platform?: string
@@ -75,22 +78,24 @@ export function WebsocketTerminal() {
       } = {}
       let gatewayPort = 18789
       let gatewayToken: string | null = null
-      let gatewayTlsEnabled = false  // TLS 启用状态
-      
+      let gatewayTlsEnabled = false
+      let gatewayAuthMode: string = 'token' // none, token, password, trusted-proxy
+
       try {
-        // 获取 Gateway 配置（包含 gateway.auth.token）
         const deviceResponse = await fetch('/api/gateway-device')
         if (deviceResponse.ok) {
           const deviceData = await deviceResponse.json()
-
-          // Gateway token 用于 WebSocket 认证
+          gatewayAuthMode = deviceData.gatewayAuthMode || 'token'
           gatewayToken = deviceData.gatewayToken
           gatewayPort = deviceData.gatewayPort || 18789
-          gatewayTlsEnabled = deviceData.gatewayTlsEnabled || false  // 获取 TLS 状态
+          gatewayTlsEnabled = deviceData.gatewayTlsEnabled || false
 
           if (deviceData.success && deviceData.device) {
             deviceInfo = {
               deviceId: deviceData.device.deviceId,
+              instanceId: deviceData.device.instanceId,
+              publicKey: deviceData.device.publicKey,  // 获取公钥
+              privateKey: deviceData.device.privateKey,  // 获取私钥用于签名
               clientId: deviceData.device.clientId,
               clientMode: deviceData.device.clientMode,
               platform: deviceData.device.platform,
@@ -104,28 +109,19 @@ export function WebsocketTerminal() {
       }
 
       try {
-        // 根据服务器配置决定使用 ws:// 还是 wss:// 协议
-        // 针对浏览器安全策略和自签名证书问题，实现更灵活的连接策略
         let wsProtocol = 'ws://';
 
-        // 如果页面本身是 HTTPS 且服务器也启用了 TLS，使用 WSS
         if (window.location.protocol === 'https:' && gatewayTlsEnabled) {
           wsProtocol = 'wss://';
-        }
-        // 如果服务器启用了 TLS 但页面是 HTTP（例如访问本地 IP），在局域网环境中尝试 WSS
-        // 但为了避免混合内容错误，这里仍使用 WS
-        else if (gatewayTlsEnabled && window.location.protocol === 'http:') {
-          console.log('注意: 页面通过 HTTP 访问，但 OpenClaw 启用了 TLS.');
-          console.log('建议通过 HTTPS 访问以避免 WebSocket 连接问题.');
-          wsProtocol = 'ws://'; // 为避免混合内容错误暂时使用 ws
-        }
-        // 如果服务器没有启用 TLS，使用 WS
-        else if (!gatewayTlsEnabled) {
+        } else if (gatewayTlsEnabled && window.location.protocol === 'http:') {
+          console.log('注意：页面通过 HTTP 访问，但 OpenClaw 启用了 TLS.');
+          wsProtocol = 'ws://';
+        } else if (!gatewayTlsEnabled) {
           wsProtocol = 'ws://';
         }
 
         const wsUrl = `${wsProtocol}${window.location.hostname}:${gatewayPort}`;
-        console.log(`尝试连接到: ${wsUrl}`);
+        console.log(`尝试连接到：${wsUrl}`);
         const ws = new WebSocket(wsUrl)
 
         ws.onopen = () => {
@@ -133,19 +129,33 @@ export function WebsocketTerminal() {
           addTerminalLine(`✓ 已连接到 OpenClaw 服务 (${wsUrl})`, 'system')
         }
 
-        // 保存设备信息和 Gateway token 供 onmessage 使用
         const capturedDeviceInfo = deviceInfo
         const capturedGatewayToken = gatewayToken
 
-        ws.onmessage = (event) => {
+        // 使用 deviceId 作为稳定的 instanceId
+        let instanceId: string
+        if (capturedDeviceInfo.deviceId) {
+          instanceId = capturedDeviceInfo.deviceId
+          console.log('使用已配对设备的 deviceId 作为 instanceId:', instanceId.substring(0, 12) + '...')
+        } else {
+          instanceId = localStorage.getItem('openclaw-instance-id') || `meetclaw-${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 8)}`
+          localStorage.setItem('openclaw-instance-id', instanceId)
+          console.log('生成新的 instanceId:', instanceId)
+        }
+        const capturedInstanceId = instanceId
+
+        ws.onmessage = async (event) => {
           try {
             const message = event.data
-            // 尝试解析为 JSON 响应
+            // 调试：打印所有原始消息
+            console.log('RAW WebSocket message:', message)
             const jsonData = JSON.parse(message)
+            console.log('Parsed message:', JSON.stringify(jsonData, null, 2))
 
-            // 根据OpenClaw协议处理不同类型的消息
-            if (jsonData.event === "connect.challenge") {
-              // 收到挑战后立即发送连接请求
+            // 尝试多种可能的消息格式
+            const messageType = jsonData.event || jsonData.type || jsonData.method
+            
+            if (messageType === "connect.challenge" || messageType === "challenge") {
               addTerminalLine('收到连接挑战，正在发送认证信息...', 'system')
 
               interface ConnectParams {
@@ -163,46 +173,43 @@ export function WebsocketTerminal() {
                 scopes: string[];
                 userAgent: string;
                 locale: string;
-                device?: {
-                  id: string;
-                };
                 auth?: {
                   token: string;
                 };
               }
 
-              // 使用 Gateway token 进行认证（来自 gateway.auth.token）
-              // 这是 WebSocket 连接所需的认证，与设备配对 token 不同
-              const authToken = capturedGatewayToken || capturedDeviceInfo.token || ''
+              const clientId = capturedDeviceInfo.clientId || "gateway-client"
+              const clientMode = capturedDeviceInfo.clientMode || "backend"
+              const platform = capturedDeviceInfo.platform || "darwin"
 
-              // 使用已配对设备的信息，如果没有则使用默认配置
-              const clientId = capturedDeviceInfo.clientId || "gateway-client"  // 根据OpenClaw协议要求使用"gateway-client"
-              const clientMode = capturedDeviceInfo.clientMode || "cli"         // 根据OpenClaw协议要求使用"cli"
-              const platform = capturedDeviceInfo.platform || "darwin"          // 使用实际平台标识
-
-              // 获取设备ID，优先使用已配对的设备ID，否则从本地存储获取
-              let deviceId: string | null = capturedDeviceInfo.deviceId || null
-              if (!deviceId) {
-                deviceId = localStorage.getItem('openclaw-device-id') || null
-              }
-
-              // 如果没有 Gateway token，提示用户
-              if (!authToken) {
-                addTerminalLine('⚠️ 未找到 Gateway 认证 token', 'system')
-                addTerminalLine('💡 请检查 ~/.openclaw/openclaw.json 中的 gateway.auth.token', 'system')
-                addTerminalLine('💡 或运行 openclaw dashboard 获取带 token 的链接', 'system')
+              // 关键简化：Gateway auth mode 为 "token" 时，只需要提供 token 即可认证
+              // 不需要设备签名（device signature）
+              let authToken: string | undefined = undefined
+              
+              // 优先使用 gateway token（来自 openclaw.json），其次使用设备 token（来自 paired.json）
+              authToken = capturedGatewayToken || capturedDeviceInfo.token || undefined
+              
+              if (authToken) {
+                if (capturedGatewayToken && capturedDeviceInfo.token) {
+                  addTerminalLine(`✓ 使用 Gateway token 进行认证`, 'system')
+                  addTerminalLine(`✓ 设备 token 也可用`, 'system')
+                } else if (capturedGatewayToken) {
+                  addTerminalLine(`✓ 使用 Gateway token 进行认证`, 'system')
+                } else {
+                  addTerminalLine(`✓ 使用设备 token 进行认证`, 'system')
+                }
               } else {
-                addTerminalLine(`✓ 使用 Gateway token 进行认证`, 'system')
+                addTerminalLine('⚠️ 未找到认证 token', 'error')
+                addTerminalLine('💡 请检查 ~/.openclaw/openclaw.json 中的 gateway.auth.token', 'system')
               }
 
-              // 获取或创建稳定的 instanceId（保存在 localStorage）
-              let instanceId = localStorage.getItem('openclaw-instance-id')
-              if (!instanceId) {
-                instanceId = `meetclaw-${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 8)}`
-                localStorage.setItem('openclaw-instance-id', instanceId)
-              }
+              addTerminalLine(`✓ 客户端 ID: ${clientId}`, 'system')
+              addTerminalLine(`✓ 客户端模式：${clientMode}`, 'system')
 
-              // 尝试使用最广泛的权限请求
+              // 简化的 connect 参数 - 不需要 device 签名
+              // 使用设备已批准的 scopes
+              const deviceApprovedScopes = capturedDeviceInfo.scopes || ["operator.read"]
+              
               const connectParams: ConnectParams = {
                 minProtocol: 3,
                 maxProtocol: 3,
@@ -212,19 +219,13 @@ export function WebsocketTerminal() {
                   version: "1.0.0",
                   platform: platform,
                   mode: clientMode,
-                  instanceId: instanceId
+                  instanceId: capturedInstanceId
                 },
-                role: "operator", // operator 角色
-                scopes: [
-                  "operator.read",   // 读取权限
-                  "operator.write",  // 写入权限
-                  "operator.admin"   // 管理权限 (需要这个才能访问 channels)
-                ],
+                role: "operator",
+                scopes: deviceApprovedScopes,
                 userAgent: navigator.userAgent || "MeetClaw-Terminal/1.0",
                 locale: "zh-CN",
-                device: deviceId ? {
-                  id: deviceId
-                } : undefined,
+                // Token 认证模式：只需要 auth.token，不需要 device 签名
                 auth: authToken ? {
                   token: authToken
                 } : undefined
@@ -237,21 +238,23 @@ export function WebsocketTerminal() {
                 params: connectParams
               }
 
+              // 调试：打印发送的 connect 消息
+              console.log('=== 发送 connect 请求 ===')
+              console.log('connectMsg:', JSON.stringify(connectMsg, null, 2))
+              console.log('auth.token:', connectParams.auth?.token?.substring(0, 20) + '...')
+
               ws.send(JSON.stringify(connectMsg))
             } else if (jsonData.type === "res" && jsonData.id?.startsWith("conn-")) {
-              // 处理连接响应
               if (jsonData.ok) {
                 setIsConnected(true)
                 setIsLoading(false)
                 setConnectionStatus('connected')
                 addTerminalLine('✅ 连接认证成功！', 'system')
 
-                // 显示连接响应中的权限信息
                 const grantedScopes = jsonData.payload?.grantedScopes || []
                 if (grantedScopes.length > 0) {
-                  addTerminalLine(`📋 授权范围: ${grantedScopes.join(', ')}`, 'system')
+                  addTerminalLine(`📋 授权范围：${grantedScopes.join(', ')}`, 'system')
 
-                  // 检查是否有足够的权限执行命令
                   const hasWritePermission = grantedScopes.includes('operator.write') || grantedScopes.includes('operator.admin');
                   const hasReadPermission = grantedScopes.includes('operator.read') || grantedScopes.includes('operator.write') || grantedScopes.includes('operator.admin');
 
@@ -264,73 +267,63 @@ export function WebsocketTerminal() {
                   if (hasWritePermission) {
                     addTerminalLine('✅ 具备写入权限', 'system');
                   } else {
-                    addTerminalLine('⚠️ 缺少写入权限，执行修改操作的命令将被拒绝', 'system');
+                    addTerminalLine('⚠️ 缺少写入权限，聊天和修改操作将被拒绝', 'system');
                   }
 
-                  // 存储权限信息供后续命令使用
                   localStorage.setItem('openclaw-permissions', JSON.stringify({
                     read: hasReadPermission,
                     write: hasWritePermission,
                     scopes: grantedScopes
                   }));
                 }
-                
-                // 显示服务器信息
+
                 if (jsonData.payload?.server?.version) {
-                  addTerminalLine(`🖥️ 服务器版本: ${jsonData.payload.server.version}`, 'system')
+                  addTerminalLine(`🖥️ 服务器版本：${jsonData.payload.server.version}`, 'system')
                 }
 
-                // 如果响应中包含认证token，保存到localStorage
                 if (jsonData.payload?.authToken) {
                   localStorage.setItem('openclaw-auth-token', jsonData.payload.authToken)
                 }
-                // 如果响应中包含设备ID，保存到localStorage
                 if (jsonData.payload?.deviceId) {
                   localStorage.setItem('openclaw-device-id', jsonData.payload.deviceId)
                 }
+                if (capturedInstanceId) {
+                  localStorage.setItem('openclaw-instance-id', capturedInstanceId)
+                }
               } else {
-                addTerminalLine(`❌ 连接失败: ${jsonData.error?.message || '未知错误'}`, 'error')
+                addTerminalLine(`❌ 连接失败：${jsonData.error?.message || '未知错误'}`, 'error')
                 setConnectionStatus('error')
+                setIsLoading(false)
 
-                // 如果是设备认证错误，提示用户
                 if (jsonData.error?.code?.includes('DEVICE') || jsonData.error?.message?.includes('device')) {
-                  addTerminalLine('💡 提示: 可能需要在OpenClaw界面中批准此设备', 'system')
+                  addTerminalLine('💡 提示：可能需要在 OpenClaw 界面中批准此设备', 'system')
                 } else if (jsonData.error?.code === "NOT_PAIRED") {
-                  addTerminalLine('💡 提示: 设备未配对，请在OpenClaw界面中确认配对', 'system')
+                  addTerminalLine('💡 提示：设备未配对，请在 OpenClaw 界面中确认配对', 'system')
                 }
 
-                // 关闭WebSocket连接，避免无效重连
                 ws.close()
                 return
               }
             } else if (jsonData.type === "event") {
-              // 处理事件消息，过滤掉高频事件
               if (jsonData.event === "tick") {
-                // 心跳事件，只更新时间戳，不在终端显示
-                // console.log('Tick event received')
+                // 心跳事件
               } else if (jsonData.event === "health") {
-                // 高频健康检查事件，只记录在控制台，不在终端显示
                 console.log('Health event received:', jsonData)
               } else if (jsonData.event === "presence") {
-                // 高频在线状态事件，只记录在控制台，不在终端显示
                 console.log('Presence event received:', jsonData)
               } else {
-                // 显示其他类型的事件
                 addTerminalLine(`${jsonData.event}: ${JSON.stringify(jsonData.payload, null, 2)}`, 'output')
               }
             } else if (jsonData.type === "res") {
-              // 处理命令响应
               if (jsonData.ok) {
                 addTerminalLine(JSON.stringify(jsonData.payload, null, 2), 'output')
               } else {
-                addTerminalLine(`❌ 错误: ${jsonData.error?.message || '未知错误'}`, 'error')
+                addTerminalLine(`❌ 错误：${jsonData.error?.message || '未知错误'}`, 'error')
               }
             } else {
-              // 显示其他消息
               addTerminalLine(JSON.stringify(jsonData, null, 2), 'output')
             }
           } catch (e) {
-            // 如果不是 JSON，直接显示文本
             addTerminalLine(event.data, 'output')
           }
         }
@@ -343,45 +336,30 @@ export function WebsocketTerminal() {
         }
 
         ws.onclose = (event) => {
-          console.log('Disconnected from OpenClaw WebSocket:', event.code, event.reason)
+          console.log('WebSocket closed:', event.code, event.reason)
           setIsConnected(false)
           setIsLoading(false)
+          setConnectionStatus('disconnected')
 
-          // 根据关闭代码决定是否重连
-          // 1000 表示正常关闭，1001 表示终端离开页面
-          // 1008 表示 Policy Violation (设备身份验证失败)
           if (event.code === 1000 || event.code === 1001) {
-            setConnectionStatus('disconnected')
             addTerminalLine('连接已正常关闭', 'system')
           } else if (event.code === 1008) {
-            // Policy Violation - 设备身份验证失败
-            setConnectionStatus('error')
             addTerminalLine('❌ 认证失败 (1008): Policy Violation', 'error')
-            addTerminalLine(`原因: ${event.reason || 'device identity required'}`, 'error')
+            addTerminalLine(`原因：${event.reason || 'device identity required'}`, 'error')
             addTerminalLine('', 'system')
             addTerminalLine('🔧 解决方案:', 'system')
-            addTerminalLine('1. 打开 OpenClaw Web 控制面板 (http://127.0.0.1:18789)', 'system')
-            addTerminalLine('2. 在设备列表中找到待批准的设备', 'system')
-            addTerminalLine('3. 点击 "Approve" 批准此设备', 'system')
-            addTerminalLine('4. 或检查 ~/.openclaw/devices/paired.json 是否有正确的设备信息', 'system')
+            addTerminalLine('1. 打开 OpenClaw 控制面板 (http://127.0.0.1:18789)', 'system')
+            addTerminalLine('2. 检查 "Pending Devices" 或 "Paired Devices"', 'system')
+            addTerminalLine('3. 确保设备已批准并具有 operator.write 权限', 'system')
             addTerminalLine('', 'system')
-            addTerminalLine('💡 正在清除本地缓存并尝试重新配对...', 'system')
-            
-            // 清除本地缓存（包括 instanceId，以便生成新的设备身份）
-            localStorage.removeItem('openclaw-auth-token')
-            localStorage.removeItem('openclaw-device-id')
-            localStorage.removeItem('openclaw-instance-id')
-            
-            // 等待更长时间后重连，给用户时间去批准设备
-            if (reconnectTimeout) clearTimeout(reconnectTimeout)
-            reconnectTimeout = setTimeout(connect, 10000) // 10秒后重连
+            addTerminalLine('💡 已配对设备 ID: ' + (capturedDeviceInfo.deviceId?.substring(0, 16) + '...' || '未知'), 'system')
+            addTerminalLine('💡 点击刷新按钮重新尝试连接', 'system')
           } else {
-            // 其他非正常关闭，尝试重连
-            setConnectionStatus('connecting')
-            addTerminalLine(`连接已断开 (code: ${event.code})，${reconnectInterval/1000}秒后尝试重连...`, 'error')
-
-            if (reconnectTimeout) clearTimeout(reconnectTimeout)
-            reconnectTimeout = setTimeout(connect, reconnectInterval)
+            addTerminalLine(`连接已断开 (code: ${event.code})`, 'error')
+            if (event.reason) {
+              addTerminalLine(`原因：${event.reason}`, 'error')
+            }
+            addTerminalLine('请检查 OpenClaw 服务是否正在运行', 'system')
           }
         }
 
@@ -390,9 +368,8 @@ export function WebsocketTerminal() {
         console.error('Failed to establish WebSocket connection:', error)
         setIsLoading(false)
         setConnectionStatus('error')
-        addTerminalLine('❌ 无法建立WebSocket连接', 'error')
+        addTerminalLine('❌ 无法建立 WebSocket 连接', 'error')
 
-        // 尝试重连
         if (reconnectTimeout) clearTimeout(reconnectTimeout)
         reconnectTimeout = setTimeout(connect, reconnectInterval)
       }
@@ -403,7 +380,6 @@ export function WebsocketTerminal() {
     return () => {
       if (reconnectTimeout) clearTimeout(reconnectTimeout)
       if (wsRef.current) {
-        // 正常关闭连接，避免不必要的重连
         wsRef.current.close(1000, 'Component unmount')
       }
     }
@@ -416,10 +392,9 @@ export function WebsocketTerminal() {
       return
     }
 
-    // 检查权限
     const permissionsStr = localStorage.getItem('openclaw-permissions');
-    let hasReadPermission = true; // 默认允许，如果无法确定权限
-    let hasWritePermission = true; // 默认允许，如果无法确定权限
+    let hasReadPermission = true;
+    let hasWritePermission = true;
 
     if (permissionsStr) {
       try {
@@ -431,464 +406,527 @@ export function WebsocketTerminal() {
       }
     }
 
-    // 根据命令类型检查所需权限
-    const isWriteCommand = command.includes('create') || command.includes('delete') || command.includes('update') || command.includes('set') || command.includes('modify');
+    const isWriteCommand = command.includes('create') || command.includes('delete') ||
+                           command.includes('update') || command.includes('set') ||
+                           command.includes('modify') || command.includes('patch') ||
+                           command.includes('apply') || command.includes('restart') ||
+                           command.includes('approve') || command.includes('revoke') ||
+                           command.includes('enable') || command.includes('disable') ||
+                           command.includes('install') || command.includes('abort');
 
     if (isWriteCommand && !hasWritePermission) {
-      addTerminalLine(`⚠️ 权限不足: 当前连接不允许执行修改操作 "${command}"`, 'error');
-      addTerminalLine('💡 提示: 请使用具有管理员权限的账户重新配对设备', 'system');
+      addTerminalLine(`⚠️ 权限不足：当前连接不允许执行修改操作 "${command}"`, 'error');
+      addTerminalLine('💡 提示：请使用具有管理员权限的账户重新配对设备', 'system');
       return;
     }
 
     if (!hasReadPermission && !isWriteCommand) {
-      addTerminalLine(`⚠️ 权限不足: 当前连接不允许执行读取操作 "${command}"`, 'error');
-      addTerminalLine('💡 提示: 请使用具有读取权限的账户重新配对设备', 'system');
+      addTerminalLine(`⚠️ 权限不足：当前连接不允许执行读取操作 "${command}"`, 'error');
+      addTerminalLine('💡 提示：请使用具有读取权限的账户重新配对设备', 'system');
       return;
     }
 
-    // 生成唯一的命令ID
     const generateId = () => `cmd-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
 
-    // 根据OpenClaw协议构造命令
-    let commandMsg;
+    const parseCommandArgs = (cmd: string): { method: string; params: Record<string, unknown> } => {
+      const parts = cmd.trim().split(/\s+/)
+      const baseCmd = parts[0].toLowerCase()
+      const args = parts.slice(1)
 
-    // 对不同类型的命令使用适当的格式
-    if (command === 'status' || command === 'version' || command === 'help') {
-      commandMsg = {
-        type: "req",
-        method: "gateway.status",
-        id: generateId(),
-        params: {}
-      }
-    } else if (command === 'agents' || command.startsWith('agents')) {
-      commandMsg = {
-        type: "req",
-        method: "agents.list",
-        id: generateId(),
-        params: {}
-      }
-    } else if (command === 'channels' || command.startsWith('channels')) {
-      // channels 命令需要 admin 权限
-      commandMsg = {
-        type: "req",
-        method: "channels.status",
-        id: generateId(),
-        params: {}
-      }
-    } else if (command === 'gateway' || command.startsWith('gateway')) {
-      commandMsg = {
-        type: "req",
-        method: "gateway.status",
-        id: generateId(),
-        params: {}
-      }
-    } else if (command.startsWith('memory')) {
-      commandMsg = {
-        type: "req",
-        method: "memory.stats",
-        id: generateId(),
-        params: {}
-      }
-    } else if (command === 'logs') {
-      commandMsg = {
-        type: "req",
-        method: "logs.query",
-        id: generateId(),
-        params: { limit: 20 }
-      }
-    } else {
-      // 对于其他命令，尝试作为会话消息发送到 Agent
-      commandMsg = {
-        type: "req",
-        method: "sessions.send",
-        id: generateId(),
-        params: {
-          sessionId: "agent:main:main",  // 默认 Agent 会话
-          content: command
-        }
+      switch (baseCmd) {
+        // === 状态与健康检查 ===
+        case 'status':
+        case 'gateway':
+          return { method: 'gateway.status', params: {} }
+
+        case 'health':
+          return { method: 'health', params: {} }
+
+        case 'version':
+          return { method: 'gateway.status', params: {} }
+
+        // === 配置管理 ===
+        case 'config':
+          if (args[0] === 'get') {
+            return {
+              method: 'config.get',
+              params: args[1] ? { path: args[1] } : {}
+            }
+          } else if (args[0] === 'set') {
+            if (args.length < 3) {
+              addTerminalLine('❌ 用法：config.set <path> <value>', 'error')
+              return { method: '', params: {} }
+            }
+            let value: string | number | boolean | object = args[2]
+            try {
+              value = JSON.parse(args.slice(2).join(' '))
+            } catch (e) {
+              // 保持为字符串
+            }
+            return {
+              method: 'config.set',
+              params: { path: args[1], value }
+            }
+          } else if (args[0] === 'list') {
+            return { method: 'config.list', params: {} }
+          } else {
+            return { method: 'config.get', params: {} }
+          }
+
+        // === 会话管理 ===
+        case 'sessions':
+          if (args[0] === 'list') {
+            return { method: 'sessions.list', params: {} }
+          } else if (args[0] === 'get') {
+            return {
+              method: 'sessions.get',
+              params: args[1] ? { sessionId: args[1] } : {}
+            }
+          } else {
+            return { method: 'sessions.list', params: {} }
+          }
+
+        // === 通道管理 ===
+        case 'channels':
+          if (args[0] === 'status') {
+            return { method: 'channels.status', params: {} }
+          } else if (args[0] === 'list') {
+            return { method: 'channels.list', params: {} }
+          } else if (args[0] === 'get') {
+            return {
+              method: 'channels.get',
+              params: args[1] ? { channelId: args[1] } : {}
+            }
+          } else {
+            return { method: 'channels.status', params: {} }
+          }
+
+        // === 内存管理 ===
+        case 'memory':
+          if (args[0] === 'status') {
+            return { method: 'memory.status', params: {} }
+          } else if (args[0] === 'get') {
+            return {
+              method: 'memory.get',
+              params: args[1] ? { key: args[1] } : {}
+            }
+          } else if (args[0] === 'set') {
+            if (args.length < 3) {
+              addTerminalLine('❌ 用法：memory.set <key> <value>', 'error')
+              return { method: '', params: {} }
+            }
+            return {
+              method: 'memory.set',
+              params: { key: args[1], value: args.slice(2).join(' ') }
+            }
+          } else if (args[0] === 'delete') {
+            return {
+              method: 'memory.delete',
+              params: args[1] ? { key: args[1] } : {}
+            }
+          } else {
+            return { method: 'memory.status', params: {} }
+          }
+
+        // === 日志管理 ===
+        case 'logs':
+          if (args[0] === 'get') {
+            return {
+              method: 'logs.get',
+              params: {
+                limit: args[1] ? parseInt(args[1]) : 50,
+                level: args.find(a => a.startsWith('level='))?.split('=')[1] as string || undefined
+              }
+            }
+          } else {
+            return {
+              method: 'logs.get',
+              params: { limit: 50 }
+            }
+          }
+
+        // === 聊天 ===
+        case 'chat':
+          if (args[0] === 'send') {
+            return {
+              method: 'chat.send',
+              params: {
+                channelId: args[1] || 'default',
+                text: args.slice(2).join(' ')
+              }
+            }
+          } else {
+            return {
+              method: 'chat.send',
+              params: {
+                channelId: 'default',
+                text: args.join(' ')
+              }
+            }
+          }
+
+        // === 定时任务 ===
+        case 'cron':
+          if (args[0] === 'list') {
+            return { method: 'cron.list', params: {} }
+          } else if (args[0] === 'get') {
+            return {
+              method: 'cron.get',
+              params: args[1] ? { cronId: args[1] } : {}
+            }
+          } else {
+            return { method: 'cron.list', params: {} }
+          }
+
+        // === 技能管理 ===
+        case 'skills':
+          if (args[0] === 'list') {
+            return { method: 'skills.list', params: {} }
+          } else if (args[0] === 'get') {
+            return {
+              method: 'skills.get',
+              params: args[1] ? { skillId: args[1] } : {}
+            }
+          } else {
+            return { method: 'skills.list', params: {} }
+          }
+
+        // === 设备管理 ===
+        case 'devices':
+          if (args[0] === 'list') {
+            return { method: 'devices.list', params: {} }
+          } else if (args[0] === 'get') {
+            return {
+              method: 'devices.get',
+              params: args[1] ? { deviceId: args[1] } : {}
+            }
+          } else if (args[0] === 'approve') {
+            return {
+              method: 'devices.approve',
+              params: args[1] ? { requestId: args[1] } : {}
+            }
+          } else if (args[0] === 'revoke') {
+            return {
+              method: 'devices.revoke',
+              params: args[1] ? { deviceId: args[1] } : {}
+            }
+          } else {
+            return { method: 'devices.list', params: {} }
+          }
+
+        // === 执行命令 ===
+        case 'exec':
+          return {
+            method: 'exec',
+            params: {
+              command: args.join(' ')
+            }
+          }
+
+        // === 更新管理 ===
+        case 'update':
+          if (args[0] === 'check') {
+            return { method: 'update.check', params: {} }
+          } else if (args[0] === 'apply') {
+            return { method: 'update.apply', params: {} }
+          } else {
+            return { method: 'update.check', params: {} }
+          }
+
+        // === 帮助 ===
+        case 'help':
+          const helpText = `
+OpenClaw Gateway WebSocket API 帮助
+
+可用命令:
+  status / gateway     - 查看网关状态
+  health              - 健康检查
+  version             - 查看版本
+
+  config get [path]   - 获取配置
+  config set <path> <value> - 设置配置
+  config list         - 列出配置
+
+  sessions list       - 列出会话
+  sessions get <id>   - 获取会话详情
+
+  channels status     - 查看通道状态
+  channels list       - 列出通道
+  channels get <id>   - 获取通道详情
+
+  memory status       - 查看内存状态
+  memory get <key>    - 获取内存值
+  memory set <key> <value> - 设置内存值
+  memory delete <key> - 删除内存值
+
+  logs get [limit]    - 获取日志
+
+  chat send <channel> <text> - 发送消息
+
+  cron list           - 列出定时任务
+  cron get <id>       - 获取定时任务详情
+
+  skills list         - 列出技能
+  skills get <id>     - 获取技能详情
+
+  devices list        - 列出设备
+  devices get <id>    - 获取设备详情
+  devices approve <id> - 批准设备
+  devices revoke <id>  - 撤销设备
+
+  exec <command>      - 执行命令
+
+  update check        - 检查更新
+  update apply        - 应用更新
+
+  help                - 显示此帮助信息
+`.trim()
+          addTerminalLine(helpText, 'output')
+          return { method: '', params: {} }
+
+        // === 默认 ===
+        default:
+          addTerminalLine(`❌ 未知命令：${baseCmd}`, 'error')
+          addTerminalLine('输入 "help" 查看可用命令', 'system')
+          return { method: '', params: {} }
       }
     }
 
-    addTerminalLine(`$ ${command}`, 'input')
-    wsRef.current.send(JSON.stringify(commandMsg))
-  }
+    const { method, params } = parseCommandArgs(command)
 
-  // 处理回车发送命令
-  const handleKeyPress = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter') {
-      if (inputCommand.trim()) {
-        sendCommand(inputCommand.trim())
-        setInputCommand('')
-      }
-    } else if (e.key === 'ArrowUp') {
-      // TODO: 实现命令历史记录
-    }
-  }
-
-  // 执行预设命令
-  const executeCommand = (cmd: string) => {
-    if (connectionStatus !== 'connected') {
-      addTerminalLine('WebSocket 连接未就绪', 'error')
+    if (!method) {
       return
     }
 
-    // 检查权限
-    const permissionsStr = localStorage.getItem('openclaw-permissions');
-    let hasReadPermission = true; // 默认允许，如果无法确定权限
-    let hasWritePermission = true; // 默认允许，如果无法确定权限
-
-    if (permissionsStr) {
-      try {
-        const permissions = JSON.parse(permissionsStr);
-        hasReadPermission = permissions.read || false;
-        hasWritePermission = permissions.write || false;
-      } catch (e) {
-        console.warn('Could not parse permissions:', e);
-      }
+    const commandId = generateId()
+    const commandMessage = {
+      type: "req",
+      id: commandId,
+      method: method,
+      params: params
     }
 
-    // 根据命令类型检查所需权限
-    const isWriteCommand = cmd.includes('create') || cmd.includes('delete') || cmd.includes('update') || cmd.includes('set') || cmd.includes('modify');
+    addTerminalLine(`$ ${command}`, 'input')
+    console.log('Sending command:', commandMessage)
+    wsRef.current.send(JSON.stringify(commandMessage))
+  }
 
-    if (isWriteCommand && !hasWritePermission) {
-      addTerminalLine(`⚠️ 权限不足: 当前连接不允许执行修改操作 "${cmd}"`, 'error');
-      addTerminalLine('💡 提示: 请使用具有管理员权限的账户重新配对设备', 'system');
-      return;
+  const handleKeyPress = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter' && inputCommand.trim()) {
+      executeCommand(inputCommand.trim())
+      setInputCommand('')
     }
+  }
 
-    if (!hasReadPermission && !isWriteCommand) {
-      addTerminalLine(`⚠️ 权限不足: 当前连接不允许执行读取操作 "${cmd}"`, 'error');
-      addTerminalLine('💡 提示: 请使用具有读取权限的账户重新配对设备', 'system');
-      return;
-    }
-
-    setInputCommand(cmd)
+  const executeCommand = (cmd: string) => {
+    sendCommand(cmd)
     setTimeout(() => {
-      if (inputRef.current) {
-        inputRef.current.focus()
+      if (terminalRef.current) {
+        terminalRef.current.scrollTop = terminalRef.current.scrollHeight
       }
-      sendCommand(cmd)
     }, 100)
   }
 
-  // 清空终端
   const clearTerminal = () => {
-    setTerminalLines([
-      { id: '1', content: '终端已清空', timestamp: Date.now(), type: 'system' },
-      { id: '2', content: '欢迎使用 OpenClaw TUI 终端', timestamp: Date.now(), type: 'system' },
-      { id: '3', content: '键入 "help" 查看可用命令', timestamp: Date.now(), type: 'system' }
-    ])
+    setTerminalLines([])
   }
 
-  // 复制终端内容
   const copyTerminalContent = () => {
     const content = terminalLines.map(line => line.content).join('\n')
     navigator.clipboard.writeText(content)
-    addTerminalLine('终端内容已复制到剪贴板', 'system')
+    addTerminalLine('✅ 终端内容已复制到剪贴板', 'system')
   }
 
-  // 重新连接
   const reconnect = () => {
     if (wsRef.current) {
-      wsRef.current.close()
+      wsRef.current.close(1000, 'User requested reconnect')
     }
+    setTerminalLines([])
+    setIsConnected(false)
+    setConnectionStatus('disconnected')
+    setTimeout(() => {
+      window.location.reload()
+    }, 100)
   }
 
-  // 清除缓存并重新连接
   const clearCacheAndReconnect = () => {
-    // 清除保存的认证信息
     localStorage.removeItem('openclaw-auth-token')
     localStorage.removeItem('openclaw-device-id')
-    addTerminalLine('🗑️ 已清除本地缓存', 'system')
-    addTerminalLine('🔄 正在重新连接...', 'system')
-    
-    // 关闭当前连接，触发重连
-    if (wsRef.current) {
-      wsRef.current.close()
-    }
+    localStorage.removeItem('openclaw-instance-id')
+    localStorage.removeItem('openclaw-permissions')
+    reconnect()
   }
 
-  // 预设命令
-  const presetCommands: OpenClawCommand[] = [
-    { command: 'status', description: '查看服务整体状态', category: 'status' },
-    { command: 'agents', description: '查看所有活跃的 Agents', category: 'agent' },
-    { command: 'channels', description: '查看所有通信通道', category: 'channel' },
-    { command: 'gateway status', description: '查看网关服务状态', category: 'gateway' },
-    { command: 'memory stats', description: '查看记忆系统统计', category: 'memory' },
-    { command: 'version', description: '查看 OpenClaw 版本', category: 'system' },
-    { command: 'logs', description: '查看最新日志', category: 'system' },
-    { command: 'help', description: '显示所有可用命令', category: 'help' },
+  const presetCommands = [
+    { command: 'status', description: '网关状态', category: 'status' },
+    { command: 'health', description: '健康检查', category: 'status' },
+    { command: 'version', description: '版本信息', category: 'status' },
+    { command: 'config list', description: '配置列表', category: 'config' },
+    { command: 'channels status', description: '通道状态', category: 'channel' },
+    { command: 'channels list', description: '通道列表', category: 'channel' },
+    { command: 'sessions list', description: '会话列表', category: 'session' },
+    { command: 'memory status', description: '内存状态', category: 'memory' },
+    { command: 'logs get 50', description: '最近日志', category: 'logs' },
+    { command: 'devices list', description: '设备列表', category: 'device' },
+    { command: 'skills list', description: '技能列表', category: 'skills' },
+    { command: 'cron list', description: '定时任务', category: 'cron' },
+    { command: 'help', description: '帮助信息', category: 'help' },
   ]
 
-  // 按类别分组命令
   const groupedCommands = presetCommands.reduce((acc, cmd) => {
     if (!acc[cmd.category]) {
       acc[cmd.category] = []
     }
     acc[cmd.category].push(cmd)
     return acc
-  }, {} as Record<string, OpenClawCommand[]>)
+  }, {} as Record<string, typeof presetCommands>)
 
-  // 自动滚动到底部
   useEffect(() => {
     if (terminalRef.current) {
       terminalRef.current.scrollTop = terminalRef.current.scrollHeight
     }
   }, [terminalLines])
 
-  // 连接状态颜色
-  const statusColors = {
-    disconnected: { bg: 'bg-red-500/20', border: 'border-red-500/30', text: 'text-red-400' },
-    connecting: { bg: 'bg-yellow-500/20', border: 'border-yellow-500/30', text: 'text-yellow-400' },
-    connected: { bg: 'bg-green-500/20', border: 'border-green-500/30', text: 'text-green-400' },
-    error: { bg: 'bg-red-500/20', border: 'border-red-500/30', text: 'text-red-400' }
-  }
-
-  const status = statusColors[connectionStatus]
-
   return (
     <motion.div
-      className={`rounded-xl overflow-hidden flex flex-col ${
-        isFullscreen ? 'fixed inset-4 z-50' : 'w-full max-w-4xl mx-auto'
-      }`}
-      style={{
-        background: 'rgba(15, 15, 25, 0.95)',
-        border: `1px solid ${status.border.replace('border-', '')}`,
-        boxShadow: `0 0 60px ${status.bg.replace('bg-', '').replace('/20', '')}30, inset 0 1px 0 rgba(255,255,255,0.05)`
-      }}
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.3 }}
+      className="fixed bottom-4 right-4 z-50"
+      initial={{ scale: 0.9, opacity: 0 }}
+      animate={{ scale: 1, opacity: 1 }}
+      exit={{ scale: 0.9, opacity: 0 }}
+      transition={{ duration: 0.2 }}
     >
-      {/* 终端标题栏 */}
-      <div
-        className="flex items-center justify-between px-4 py-2 cursor-move"
-        style={{
-          background: `${status.bg}`,
-          borderBottom: `1px solid ${status.border}`
-        }}
-      >
-        <div className="flex items-center gap-3">
-          <TerminalIcon className="w-4 h-4" style={{ color: status.text }} />
-          <span className="font-medium" style={{ color: status.text }}>OpenClaw TUI 终端</span>
-          <div className="flex items-center gap-1.5">
-            <div
-              className={`w-2 h-2 rounded-full ${
-                connectionStatus === 'connected' ? 'animate-pulse' : ''
-              }`}
-              style={{ background: status.text.replace('text-', '') }}
-            />
-            <span className="text-xs capitalize" style={{ color: status.text }}>
-              {connectionStatus === 'connected' ? '已连接' :
-               connectionStatus === 'connecting' ? '连接中' :
-               connectionStatus === 'error' ? '错误' : '未连接'}
-            </span>
-            {isLoading && (
-              <RefreshCw className="w-3 h-3 animate-spin" style={{ color: status.text }} />
-            )}
-          </div>
-        </div>
-
-        <div className="flex items-center gap-2">
-          <button
-            onClick={reconnect}
-            disabled={connectionStatus === 'connecting' || isLoading}
-            className="p-1 rounded hover:bg-white/10 transition-colors disabled:opacity-50"
-            title="重新连接"
-          >
-            <RefreshCw className={`w-4 h-4 ${connectionStatus === 'connecting' || isLoading ? 'animate-spin' : ''}`} />
-          </button>
-
-          <button
-            onClick={clearCacheAndReconnect}
-            disabled={connectionStatus === 'connecting' || isLoading}
-            className="p-1 rounded hover:bg-white/10 transition-colors disabled:opacity-50"
-            title="清除缓存并重新连接"
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-            </svg>
-          </button>
-
-          <button
-            onClick={() => setIsMinimized(!isMinimized)}
-            className="p-1 rounded hover:bg-white/10 transition-colors"
-            title={isMinimized ? '展开' : '最小化'}
-          >
-            <svg
-              className="w-4 h-4"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-              style={{ transform: isMinimized ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }}
-            >
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={isMinimized ? "M5 15l7-7 7 7" : "M19 9l-7 7-7-7"} />
-            </svg>
-          </button>
-
-          <button
-            onClick={() => setIsFullscreen(!isFullscreen)}
-            className="p-1 rounded hover:bg-white/10 transition-colors"
-            title={isFullscreen ? '退出全屏' : '全屏'}
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              {isFullscreen ? (
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 16L2 16L2 20L6 20L6 16ZM18 8L22 8L22 4L18 4L18 8ZM18 20L22 20L22 16L18 16L18 20ZM6 4L2 4L2 8L6 8L6 4Z" />
-              ) : (
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8L4 4L8 4M4 16L4 20L8 20M20 8L20 4L16 4M20 16L20 20L16 20" />
-              )}
-            </svg>
-          </button>
-
-          <button
-            onClick={clearTerminal}
-            className="p-1 rounded hover:bg-white/10 transition-colors"
-            title="清空终端"
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-            </svg>
-          </button>
-        </div>
-      </div>
-
-      {/* 最小化后的占位符 */}
       <AnimatePresence>
         {isMinimized ? (
           <motion.div
-            className="p-4 text-center text-gray-500 cursor-pointer"
+            className="bg-gray-900/90 backdrop-blur-sm border border-gray-700 rounded-lg p-3 cursor-pointer hover:bg-gray-800/90 transition-colors"
             onClick={() => setIsMinimized(false)}
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: 'auto' }}
-            exit={{ opacity: 0, height: 0 }}
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
           >
-            终端已最小化，点击展开...
+            <TerminalIcon className="w-6 h-6 text-cyan-400" />
           </motion.div>
         ) : (
           <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="flex-1 flex flex-col"
+            className="bg-gray-900/95 backdrop-blur-sm border border-gray-700 rounded-lg shadow-2xl"
+            style={{ width: '800px', maxHeight: '600px' }}
+            initial={{ scale: 0.9, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            exit={{ scale: 0.9, opacity: 0 }}
           >
-            {/* 终端内容区域 */}
+            {/* 标题栏 */}
+            <div className="flex items-center justify-between px-4 py-2 border-b border-gray-700 bg-gray-800/50 rounded-t-lg">
+              <div className="flex items-center gap-2">
+                <TerminalIcon className="w-5 h-5 text-cyan-400" />
+                <span className="text-sm font-medium text-gray-200">OpenClaw Terminal</span>
+                <span className={`px-2 py-0.5 text-xs rounded-full ${
+                  isConnected ? 'bg-green-900/50 text-green-400' :
+                  connectionStatus === 'connecting' ? 'bg-yellow-900/50 text-yellow-400' :
+                  'bg-gray-700 text-gray-400'
+                }`}>
+                  {connectionStatus === 'connected' ? '已连接' :
+                   connectionStatus === 'connecting' ? '连接中...' :
+                   connectionStatus === 'error' ? '错误' : '未连接'}
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={reconnect}
+                  className="p-1.5 hover:bg-gray-700 rounded transition-colors"
+                  title="重新连接"
+                >
+                  <RefreshCw className="w-4 h-4 text-gray-400 hover:text-cyan-400" />
+                </button>
+                <button
+                  onClick={clearCacheAndReconnect}
+                  className="p-1.5 hover:bg-gray-700 rounded transition-colors"
+                  title="清除缓存并重新连接"
+                >
+                  <svg className="w-4 h-4 text-gray-400 hover:text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                  </svg>
+                </button>
+                <button
+                  onClick={() => setIsMinimized(true)}
+                  className="p-1.5 hover:bg-gray-700 rounded transition-colors"
+                  title="最小化"
+                >
+                  <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 12H4" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+
+            {/* 终端内容区 */}
             <div
               ref={terminalRef}
-              className="flex-1 overflow-y-auto p-4 font-mono text-sm leading-relaxed"
-              style={{ maxHeight: '300px', minHeight: '200px' }}
+              className="p-4 font-mono text-sm text-gray-100 overflow-y-auto"
+              style={{ height: '400px' }}
             >
               {terminalLines.map((line) => (
                 <motion.div
                   key={line.id}
-                  className="mb-1"
                   initial={{ opacity: 0, x: -10 }}
                   animate={{ opacity: 1, x: 0 }}
-                  transition={{ duration: 0.1 }}
-                >
-                  <span className={
-                    line.type === 'input' ? 'text-green-400' :
+                  className={`mb-1 whitespace-pre-wrap ${
+                    line.type === 'input' ? 'text-cyan-400' :
+                    line.type === 'system' ? 'text-yellow-400' :
                     line.type === 'error' ? 'text-red-400' :
-                    line.type === 'system' ? 'text-blue-400' :
                     'text-gray-300'
-                  }>
-                    {line.content}
-                  </span>
+                  }`}
+                >
+                  {line.type === 'input' && <span className="text-green-400 mr-2">$</span>}
+                  {line.content}
                 </motion.div>
               ))}
+              {isLoading && (
+                <motion.div
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  className="text-yellow-400"
+                >
+                  正在连接...
+                </motion.div>
+              )}
             </div>
 
-            {/* 预设命令区域 - 按类别组织 */}
-            <div className="px-4 py-2 border-t" style={{ borderColor: 'rgba(255,255,255,0.08)' }}>
-              <div className="text-xs text-gray-400 mb-2">快速命令:</div>
-              <div className="flex flex-wrap gap-2 max-h-24 overflow-y-auto">
-                {Object.entries(groupedCommands).map(([category, cmds]) => (
-                  <div key={category} className="mr-4">
-                    <div className="text-xs text-gray-500 mb-1 capitalize">{category}:</div>
-                    <div className="flex flex-wrap gap-1">
-                      {cmds.map((cmd, index) => (
-                        <motion.button
-                          key={index}
-                          className="px-2 py-1 rounded text-xs flex items-center gap-1"
-                          style={{
-                            background: connectionStatus === 'connected' ? 'rgba(255,255,255,0.05)' : 'rgba(255,255,255,0.02)',
-                            border: `1px solid ${connectionStatus === 'connected' ? 'rgba(255,255,255,0.1)' : 'rgba(255,255,255,0.05)'}`,
-                            color: connectionStatus === 'connected' ? '#00F0FF' : '#00F0FF80',
-                            cursor: connectionStatus === 'connected' ? 'pointer' : 'not-allowed'
-                          }}
-                          whileHover={connectionStatus === 'connected' ? {
-                            background: 'rgba(0, 240, 255, 0.1)',
-                            borderColor: 'rgba(0, 240, 255, 0.3)'
-                          } : {}}
-                          whileTap={connectionStatus === 'connected' ? { scale: 0.95 } : {}}
-                          onClick={() => {
-                            if (connectionStatus === 'connected') {
-                              executeCommand(cmd.command)
-                            }
-                          }}
-                          title={connectionStatus === 'connected' ? cmd.description : '等待连接...'}
-                          disabled={connectionStatus !== 'connected'}
-                        >
-                          <Play className="w-2.5 h-2.5" />
-                          {cmd.command}
-                        </motion.button>
-                      ))}
-                    </div>
-                  </div>
-                ))}
+            {/* 命令输入区 */}
+            <div className="px-4 py-2 border-t border-gray-700 bg-gray-800/50">
+              <div className="flex items-center gap-2">
+                <span className="text-green-400 font-mono">$</span>
+                <input
+                  ref={inputRef}
+                  type="text"
+                  value={inputCommand}
+                  onChange={(e) => setInputCommand(e.target.value)}
+                  onKeyPress={handleKeyPress}
+                  placeholder={isConnected ? "输入命令..." : "等待连接..."}
+                  disabled={!isConnected}
+                  className="flex-1 bg-transparent border-none outline-none text-gray-100 font-mono text-sm"
+                />
               </div>
             </div>
 
-            {/* 输入区域 */}
-            <div className="px-4 py-3 border-t" style={{ borderColor: 'rgba(255,255,255,0.08)' }}>
-              <div className="flex gap-2">
-                <div className="flex-1 relative">
-                  <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-green-400">$</span>
-                  <input
-                    ref={inputRef}
-                    type="text"
-                    value={inputCommand}
-                    onChange={(e) => setInputCommand(e.target.value)}
-                    onKeyPress={handleKeyPress}
-                    placeholder="输入命令 (e.g. status, agents, help)..."
-                    className="w-full pl-8 pr-4 py-2 bg-transparent border-none outline-none text-green-400 font-mono"
-                    style={{
-                      background: 'rgba(255,255,255,0.05)',
-                      border: '1px solid rgba(255,255,255,0.1)',
-                      borderRadius: '6px'
-                    }}
-                    disabled={connectionStatus !== 'connected'}
-                  />
-                </div>
-                <button
-                  onClick={() => {
-                    if (inputCommand.trim()) {
-                      sendCommand(inputCommand.trim())
-                      setInputCommand('')
-                    }
-                  }}
-                  disabled={!inputCommand.trim() || connectionStatus !== 'connected'}
-                  className="px-4 py-2 rounded-lg flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-                  style={{
-                    background: connectionStatus === 'connected' ? 'rgba(0, 240, 255, 0.1)' : 'rgba(255,255,255,0.1)',
-                    border: connectionStatus === 'connected' ? '1px solid rgba(0, 240, 255, 0.3)' : '1px solid rgba(255,255,255,0.1)',
-                    color: connectionStatus === 'connected' ? '#00F0FF' : 'rgba(255,255,255,0.5)'
-                  }}
-                  title="发送命令"
-                >
-                  <Play className="w-4 h-4" />
-                </button>
-                <button
-                  onClick={copyTerminalContent}
-                  className="px-3 py-2 rounded-lg flex items-center gap-1.5"
-                  style={{
-                    background: 'rgba(255,255,255,0.05)',
-                    border: '1px solid rgba(255,255,255,0.1)',
-                    color: '#00F0FF'
-                  }}
-                  title="复制内容"
-                >
-                  <Copy className="w-4 h-4" />
-                </button>
+            {/* 预设命令区 */}
+            <div className="px-4 py-3 border-t border-gray-700 bg-gray-800/30 rounded-b-lg">
+              <div className="flex flex-wrap gap-2">
+                {Object.entries(groupedCommands).map(([category, cmds]) => (
+                  <div key={category} className="flex flex-wrap gap-1 items-center">
+                    <span className="text-xs text-gray-500 uppercase">{category}:</span>
+                    {cmds.map((cmd, index) => (
+                      <motion.button
+                        key={index}
+                        onClick={() => executeCommand(cmd.command)}
+                        whileHover={{ scale: 1.05 }}
+                        whileTap={{ scale: 0.95 }}
+                        className="px-2 py-1 text-xs bg-gray-700 hover:bg-gray-600 text-gray-300 rounded transition-colors"
+                        title={cmd.description}
+                      >
+                        {cmd.command}
+                      </motion.button>
+                    ))}
+                  </div>
+                ))}
               </div>
             </div>
           </motion.div>

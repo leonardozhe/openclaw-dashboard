@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import { Orbitron, Rajdhani, Share_Tech_Mono } from 'next/font/google';
 import "./globals.css";
 
 const geistSans = Geist({
@@ -9,6 +10,25 @@ const geistSans = Geist({
 
 const geistMono = Geist_Mono({
   variable: "--font-geist-mono",
+  subsets: ["latin"],
+});
+
+// 添加赛博朋克风格字体
+const orbitron = Orbitron({
+  weight: ['400', '500', '600', '700', '800', '900'],
+  variable: "--font-orbitron",
+  subsets: ["latin"],
+});
+
+const rajdhani = Rajdhani({
+  weight: ['300', '400', '500', '600', '700'],
+  variable: "--font-rajdhani",
+  subsets: ["latin"],
+});
+
+const shareTechMono = Share_Tech_Mono({
+  weight: ['400'],
+  variable: "--font-share-tech-mono",
   subsets: ["latin"],
 });
 
@@ -25,7 +45,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
+        className={`${geistSans.variable} ${geistMono.variable} ${orbitron.variable} ${rajdhani.variable} ${shareTechMono.variable} antialiased`}
       >
         {children}
       </body>

@@ -1,6 +1,9 @@
 import { NextResponse } from 'next/server'
 import os from 'os'
-import { execSync } from 'child_process'
+import { execSync, exec } from 'child_process'
+import { promisify } from 'util'
+
+const execAsync = promisify(exec)
 
 export async function GET() {
   try {
@@ -12,11 +15,99 @@ export async function GET() {
     // 计算 CPU 使用率 - 使用更长的采样间隔获得更准确的结果
     const cpuUsage = await getCPUUsage()
     
-    // 获取内存信息
-    const totalMemory = os.totalmem()
-    const freeMemory = os.freemem()
-    const usedMemory = totalMemory - freeMemory
-    const memoryUsage = (usedMemory / totalMemory) * 100
+    // 获取内存信息（跨平台优化版本）
+    const totalMemory = os.totalmem();
+    let usedMemory, freeMemory, memoryUsage;
+
+    // 尝试使用系统特定命令获取更精确的内存信息
+    try {
+      if (process.platform === 'darwin') { // macOS
+        // 使用 vm_stat 获取更精确的内存信息，计算活跃内存而非可用内存
+        const vmStatResult = execSync('vm_stat', { encoding: 'utf-8' });
+        const lines = vmStatResult.split('\n');
+
+        let pageSize = 4096; // 默认页大小
+        let freePages = 0, inactivePages = 0, speculativePages = 0;
+
+        for (const line of lines) {
+          if (line.includes('page size of')) {
+            // 获取页面大小 (例如: "page size of 4096 bytes")
+            const match = line.match(/page size of (\d+) bytes/);
+            if (match) {
+              pageSize = parseInt(match[1]);
+            }
+          } else if (line.includes('free:')) {
+            // 获取空闲页面数 (例如: "free:                               866520.")
+            const match = line.match(/free:\s+(\d+)/);
+            if (match) {
+              freePages = parseInt(match[1]);
+            }
+          } else if (line.includes('inactive:')) {
+            // 获取非活跃页面数
+            const match = line.match(/inactive:\s+(\d+)/);
+            if (match) {
+              inactivePages = parseInt(match[1]);
+            }
+          } else if (line.includes('speculative:')) {
+            // 获取推测页面数
+            const match = line.match(/speculative:\s+(\d+)/);
+            if (match) {
+              speculativePages = parseInt(match[1]);
+            }
+          }
+        }
+
+        // macOS 的可用内存 = free + speculative + inactive
+        const availableMemory = (freePages + speculativePages + inactivePages) * pageSize;
+        const usedMemoryReal = totalMemory - availableMemory;
+
+        // 计算物理内存使用率，确保在合理范围内
+        memoryUsage = totalMemory > 0 ? Math.max(0, Math.min(100, (usedMemoryReal / totalMemory) * 100)) : 0;
+        usedMemory = usedMemoryReal;
+        freeMemory = availableMemory;
+      } else if (process.platform === 'linux') { // Linux
+        // 读取 /proc/meminfo 获取更精确的内存信息
+        const fs = require('fs');
+        const memInfo = fs.readFileSync('/proc/meminfo', 'utf8');
+        const memInfoLines = memInfo.split('\n');
+
+        let memTotal = 0, memFree = 0, buffers = 0, cached = 0, sReclaimable = 0, shmem = 0;
+
+        for (const line of memInfoLines) {
+          if (line.startsWith('MemTotal:')) {
+            memTotal = parseInt(line.split(/\s+/)[1]) * 1024; // KB to bytes
+          } else if (line.startsWith('MemFree:')) {
+            memFree = parseInt(line.split(/\s+/)[1]) * 1024; // KB to bytes
+          } else if (line.startsWith('Buffers:')) {
+            buffers = parseInt(line.split(/\s+/)[1]) * 1024; // KB to bytes
+          } else if (line.startsWith('Cached:')) {
+            cached = parseInt(line.split(/\s+/)[1]) * 1024; // KB to bytes
+          } else if (line.startsWith('SReclaimable:')) {
+            sReclaimable = parseInt(line.split(/\s+/)[1]) * 1024; // KB to bytes
+          } else if (line.startsWith('Shmem:')) {
+            shmem = parseInt(line.split(/\s+/)[1]) * 1024; // KB to bytes
+          }
+        }
+
+        // 实际可用内存 = free + buffers + cached + SReclaimable - Shmem
+        const availableMemory = memFree + buffers + cached + sReclaimable - shmem;
+        const usedMemoryReal = memTotal - availableMemory;
+
+        memoryUsage = memTotal > 0 ? Math.max(0, Math.min(100, (usedMemoryReal / memTotal) * 100)) : 0;
+        usedMemory = usedMemoryReal;
+        freeMemory = availableMemory;
+      } else { // Windows或其他平台，使用原始方法
+        freeMemory = os.freemem();
+        usedMemory = totalMemory - freeMemory;
+        memoryUsage = totalMemory > 0 ? Math.max(0, Math.min(100, (usedMemory / totalMemory) * 100)) : 0;
+      }
+    } catch (error) {
+      // 如果系统特定方法失败，回退到原始方法
+      console.warn('Could not get precise memory stats, using fallback:', error.message);
+      freeMemory = os.freemem();
+      usedMemory = totalMemory - freeMemory;
+      memoryUsage = totalMemory > 0 ? Math.max(0, Math.min(100, (usedMemory / totalMemory) * 100)) : 0;
+    }
     
     // 获取系统信息
     const hostname = os.hostname()
@@ -81,39 +172,93 @@ export async function GET() {
   }
 }
 
-// 计算 CPU 使用率 - 使用更精确的采样方法
+// 计算 CPU 使用率 - 使用更精确的采样方法，获取真实系统数据
 async function getCPUUsage(): Promise<number> {
-  const cpus1 = os.cpus()
-  
-  // 使用 500ms 采样间隔获得更准确的结果
-  await new Promise(resolve => setTimeout(resolve, 500))
-  
-  const cpus2 = os.cpus()
-  
-  let totalIdle = 0
-  let totalTick = 0
-  
-  for (let i = 0; i < cpus1.length; i++) {
-    const cpu1 = cpus1[i]
-    const cpu2 = cpus2[i]
-    
-    if (!cpu1 || !cpu2) continue
-    
-    // 计算每个 CPU 核心的时间差
-    const idleDiff = cpu2.times.idle - cpu1.times.idle
-    const userDiff = cpu2.times.user - cpu1.times.user
-    const niceDiff = cpu2.times.nice - cpu1.times.nice
-    const sysDiff = cpu2.times.sys - cpu1.times.sys
-    const irqDiff = cpu2.times.irq - cpu1.times.irq
-    
-    const totalDiff = userDiff + niceDiff + sysDiff + irqDiff + idleDiff
-    
-    totalIdle += idleDiff
-    totalTick += totalDiff
+  try {
+    // 首先尝试使用系统特定命令获取真实的CPU使用率
+    if (process.platform === 'darwin') { // macOS
+      // 使用 top 命令获取真实的CPU使用率
+      const { stdout } = await execAsync('top -l 2 | grep "CPU usage" | tail -1', { timeout: 5000 });
+      // 输出格式通常像 "CPU usage: 12.3% user, 4.5% sys, 83.2% idle"
+      const match = stdout.match(/(\d+\.\d+)%\s+user,\s+(\d+\.\d+)%\s+sys/);
+      if (match) {
+        const userUsage = parseFloat(match[1]) || 0;
+        const sysUsage = parseFloat(match[2]) || 0;
+        const totalUsage = userUsage + sysUsage;
+        return Math.max(0, Math.min(100, Math.round(totalUsage * 10) / 10));
+      }
+    } else if (process.platform === 'linux') { // Linux
+      // 读取 /proc/stat 获取CPU使用率
+      const fs = require('fs');
+      const procStat = fs.readFileSync('/proc/stat', 'utf8');
+      const cpuLines = procStat.split('\n').filter(line => line.startsWith('cpu '));
+      if (cpuLines.length > 0) {
+        const cpuData = cpuLines[0].trim().split(/\s+/).slice(1).map(Number);
+        const [user, nice, system, idle, iowait, irq, softirq] = cpuData;
+
+        const total = user + nice + system + idle + iowait + irq + softirq;
+        const busy = total - idle;
+        const usage = total > 0 ? (busy / total) * 100 : 0;
+        return Math.max(0, Math.min(100, Math.round(usage * 10) / 10));
+      }
+    }
+  } catch (error) {
+    // 如果系统命令失败，回退到原始方法
+    console.warn('Could not get precise CPU usage via system command, using fallback:', error.message);
   }
-  
-  const usage = totalTick > 0 ? ((totalTick - totalIdle) / totalTick) * 100 : 0
-  return Math.round(usage * 10) / 10
+
+  // 回退到基于 Node.js os 模块的采样方法
+  // 获取初始 CPU 时间数据
+  const cpus1 = os.cpus();
+  const startTimes = cpus1.map(cpu => ({
+    user: cpu.times.user,
+    system: cpu.times.sys,
+    nice: cpu.times.nice,
+    irq: cpu.times.irq,
+    idle: cpu.times.idle,
+    total: cpu.times.user + cpu.times.sys + cpu.times.nice + cpu.times.irq + cpu.times.idle
+  }));
+
+  // 等待一段时间再次采样 (增加采样间隔以获得更稳定的数据)
+  await new Promise(resolve => setTimeout(resolve, 1000));
+
+  // 获取第二次 CPU 时间数据
+  const cpus2 = os.cpus();
+  const endTimes = cpus2.map(cpu => ({
+    user: cpu.times.user,
+    system: cpu.times.sys,
+    nice: cpu.times.nice,
+    irq: cpu.times.irq,
+    idle: cpu.times.idle,
+    total: cpu.times.user + cpu.times.sys + cpu.times.nice + cpu.times.irq + cpu.times.idle
+  }));
+
+  // 计算每个核心在这段时间内的使用率
+  const coreUsages = startTimes.map((start, idx) => {
+    const end = endTimes[idx];
+
+    // 计算这段时间内总的CPU时间变化
+    const totalDiff = end.total - start.total;
+    const idleDiff = end.idle - start.idle;
+
+    // 如果总时间差小于等于0，说明系统很空闲或采样时间太短
+    if (totalDiff <= 0) return 0;
+
+    // 计算非空闲时间（即实际使用时间）
+    const activeTime = totalDiff - idleDiff;
+
+    // 计算使用率百分比
+    const usage = (activeTime / totalDiff) * 100;
+
+    // 限制在有效范围内
+    return Math.max(0, Math.min(100, usage));
+  });
+
+  // 计算所有核心的平均使用率
+  const avgUsage = coreUsages.reduce((sum, usage) => sum + usage, 0) / coreUsages.length;
+
+  // 四舍五入到一位小数
+  return Math.round(avgUsage * 10) / 10;
 }
 
 // 获取网络信息 - 包含真实的网络速度
