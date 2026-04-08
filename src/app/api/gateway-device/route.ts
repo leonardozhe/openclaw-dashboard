@@ -38,28 +38,46 @@ export async function GET() {
         const devices = JSON.parse(devicesContent);
 
         // paired.json 是一个对象，key 是 deviceId
-        // 获取最新的已配对设备（取第一个 key）
+        // 获取最新的已配对设备
         if (typeof devices === 'object' && devices !== null) {
           const deviceIds = Object.keys(devices);
           if (deviceIds.length > 0) {
-            // 优先选择有 operator.write 权限的设备
+            // 🔑 优先选择 clientMode 为 "webchat" 的设备（与前端连接模式匹配）
+            // 其次选择有 operator.write 权限的设备
             let selectedDeviceId: string | null = null;
             let selectedDevice = null;
+            
+            // 1. 首先查找 webchat 模式的设备
             for (const id of deviceIds) {
               const device = devices[id];
-              const hasWriteScope = device?.tokens?.operator?.scopes?.includes('operator.write') ||
-                                    device?.scopes?.includes('operator.write');
-              if (hasWriteScope) {
+              if (device?.clientMode === 'webchat') {
                 selectedDeviceId = id;
                 selectedDevice = device;
+                console.log('🔑 选择 webchat 模式的设备:', id.substring(0, 16) + '...');
                 break;
               }
             }
             
-            // 如果没有找到有写入权限的设备，使用第一个设备
+            // 2. 如果没有 webchat 设备，查找有 operator.write 权限的设备
+            if (!selectedDevice) {
+              for (const id of deviceIds) {
+                const device = devices[id];
+                const hasWriteScope = device?.tokens?.operator?.scopes?.includes('operator.write') ||
+                                      device?.scopes?.includes('operator.write');
+                if (hasWriteScope) {
+                  selectedDeviceId = id;
+                  selectedDevice = device;
+                  console.log('🔑 选择有 operator.write 权限的设备:', id.substring(0, 16) + '...');
+                  break;
+                }
+              }
+            }
+            
+            // 3. 如果还是没有找到，使用第一个设备
             if (!selectedDevice) {
               selectedDeviceId = deviceIds[0];
               selectedDevice = devices[selectedDeviceId];
+              console.log('🔑 使用第一个设备:', selectedDeviceId.substring(0, 16) + '...');
             }
 
             if (selectedDevice && selectedDeviceId) {
