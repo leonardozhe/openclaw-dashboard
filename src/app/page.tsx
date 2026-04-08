@@ -44,7 +44,7 @@ export default function Home() {
   const [channels, setChannels] = useState<ChannelData[]>([])
   const [chatChannels, setChatChannels] = useState<Channel[]>([])
   const [selectedChatChannel, setSelectedChatChannel] = useState<string>('main')
-  const [chatMessages, setChatMessages] = useState<{ id: string; channelId: string; text: string; isUser: boolean; timestamp: number }[]>([])
+  const [chatMessages, setChatMessages] = useState<{ id: string; channelId: string; text: string; isUser: boolean; timestamp: number; model?: string; upvotes?: number; downvotes?: number; ctxPercent?: number }[]>([])
   const [isVoiceMode, setIsVoiceMode] = useState(false)
   const websocketTerminalRef = useRef<WebsocketTerminalRef>(null) // 使用 SmartTerminal 导出的类型
   const chatInputRef = useRef<HTMLInputElement>(null) // 聊天输入框 ref
@@ -90,8 +90,15 @@ export default function Home() {
     if (savedChatMessages) {
       try {
         const parsed = JSON.parse(savedChatMessages)
+        // 为旧格式消息重新生成唯一 ID（修复重复 key 问题）
+        const migratedMessages = parsed.map((msg: { id?: string; isUser?: boolean }, index: number) => ({
+          ...msg,
+          id: msg.id?.startsWith('user-') || msg.id?.startsWith('ai-')
+            ? msg.id
+            : `${msg.isUser ? 'user' : 'ai'}-${Date.now()}-${index}-${Math.random().toString(36).substr(2, 9)}`
+        }))
         // 使用 setTimeout 避免在 effect 中直接调用 setState
-        setTimeout(() => setChatMessages(parsed), 0)
+        setTimeout(() => setChatMessages(migratedMessages), 0)
       } catch (e) {
         console.error('Failed to parse saved chat messages:', e)
       }
@@ -261,16 +268,14 @@ export default function Home() {
     if (success) {
       // 添加用户消息到聊天列表
       const userMsg = {
-        id: Date.now().toString(),
+        id: `user-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
         channelId: selectedChatChannel,
         text,
         isUser: true,
         timestamp: Date.now()
       }
-      console.log('✅ 添加用户消息:', userMsg)
       setChatMessages(prev => [...prev, userMsg])
-      // 显示 AI 思考状态
-      console.log('💭 设置 AI 思考状态为 true')
+      setIsSleeping(false)
       setIsAIThinking(true)
     } else {
       console.warn('⚠️ sendChatMessage 返回 false')
@@ -288,11 +293,15 @@ export default function Home() {
       }
       // 添加 AI 回复到聊天列表
       const aiMsg = {
-        id: Date.now().toString(),
+        id: `ai-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
         channelId,
         text,
         isUser: false,
-        timestamp: Date.now()
+        timestamp: Date.now(),
+        model: 'qwen3.5-plus',
+        upvotes: Math.floor(Math.random() * 50),
+        downvotes: Math.floor(Math.random() * 10),
+        ctxPercent: Math.floor(Math.random() * 100)
       }
       setChatMessages(prev => [...prev, aiMsg])
       // 关闭 AI 思考状态
@@ -319,7 +328,7 @@ export default function Home() {
     { label: '笑话', text: '讲个笑话', color: 'pink' },
     { label: '备份', text: '/backup 备份当前配置', color: 'blue', isCommand: true },
     { label: '重启', text: '/gateway restart 重启 Gateway', color: 'red', isCommand: true },
-    { label: '压缩', text: '/context compress 压缩上下文', color: 'yellow', isCommand: true }
+    { label: '压缩', text: '/compact 压缩上下文', color: 'yellow', isCommand: true }
   ]
 
   // /命令自动补全
@@ -331,7 +340,7 @@ export default function Home() {
     { cmd: '/backup', desc: '备份当前配置', full: '/backup 备份当前配置' },
     { cmd: '/gateway restart', desc: '重启 Gateway', full: '/gateway restart 重启 Gateway' },
     { cmd: '/gateway stop', desc: '停止 Gateway', full: '/gateway stop 停止 Gateway' },
-    { cmd: '/context compress', desc: '压缩上下文', full: '/context compress 压缩上下文' },
+    { cmd: '/compact', desc: '压缩上下文', full: '/compact 压缩上下文' },
     { cmd: '/memory clear', desc: '清空记忆', full: '/memory clear 清空记忆' },
     { cmd: '/session reset', desc: '重置会话', full: '/session reset 重置会话' },
     { cmd: '/model list', desc: '列出模型', full: '/model list 列出可用模型' },
@@ -625,13 +634,6 @@ export default function Home() {
                       <option value="main">主频道</option>
                     )}
                   </select>
-                  {/* 模型信息显示 */}
-                  <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs" style={{ background: 'rgba(157, 0, 255, 0.1)', color: '#9D00FF', border: '1px solid rgba(157, 0, 255, 0.2)' }}>
-                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                    </svg>
-                    <span>AI 助手</span>
-                  </div>
                 </div>
                 {/* 状态指示器 */}
                 <div className="flex items-center gap-2">
@@ -705,13 +707,26 @@ export default function Home() {
                             </span>
                           </div>
                           <p className="text-sm leading-relaxed whitespace-pre-wrap">{msg.text}</p>
+                          {!msg.isUser && msg.model && (
+                            <div className="mt-2 text-xs text-gray-500">
+                              <span className="font-medium text-gray-400">Assistant</span>
+                              <span className="mx-1.5 text-gray-600">·</span>
+                              <span className="text-gray-400">{msg.model}</span>
+                              <span className="mx-1.5 text-gray-600">·</span>
+                              <span className="text-green-400">↑{msg.upvotes}</span>
+                              <span className="mx-1.5 text-gray-600">·</span>
+                              <span className="text-red-400">↓{msg.downvotes}</span>
+                              <span className="mx-1.5 text-gray-600">·</span>
+                              <span className="text-gray-400">{msg.ctxPercent}% ctx</span>
+                            </div>
+                          )}
                         </div>
                       </motion.div>
                     ))}
-                    {/* AI 思考动画 - 专业风格 */}
+                    {/* AI 思考动画 */}
                     {isAIThinking && (
                       <motion.div
-                        className="flex items-center gap-3"
+                        className="flex items-center"
                         initial={{ opacity: 0, x: -10 }}
                         animate={{ opacity: 1, x: 0 }}
                         exit={{ opacity: 0, x: 10 }}
@@ -734,13 +749,6 @@ export default function Home() {
                               transition={{ duration: 0.5, repeat: Infinity, delay: 0.3 }}
                             />
                           </div>
-                        </div>
-                        <div className="px-3 py-1.5 rounded-lg border" style={{
-                          background: 'rgba(34, 197, 94, 0.08)',
-                          border: '1px solid rgba(34, 197, 94, 0.2)',
-                          boxShadow: '0 0 15px rgba(34, 197, 94, 0.1)'
-                        }}>
-                          <span className="text-xs text-green-300 font-medium">AI 正在思考...</span>
                         </div>
                       </motion.div>
                     )}
@@ -887,7 +895,7 @@ export default function Home() {
                     <p className="text-xs text-gray-500 truncate">{currentAssistant.title}</p>
                   </div>
                   <div className="flex items-center gap-3">
-                    {/* AI 思考状态 */}
+                    {/* AI 思考动画 */}
                     {isAIThinking && (
                       <div className="flex items-center gap-2 px-3 py-1 rounded-full" style={{ background: 'rgba(0, 240, 255, 0.1)' }}>
                         <motion.div
@@ -895,7 +903,6 @@ export default function Home() {
                           animate={{ opacity: [0.4, 1, 0.4] }}
                           transition={{ duration: 1, repeat: Infinity }}
                         />
-                        <span className="text-xs text-cyan-400">思考中...</span>
                       </div>
                     )}
                     {/* 关闭按钮 */}
@@ -1008,12 +1015,9 @@ export default function Home() {
           
         </div>
         
-        {/* 左下角版权和版本信息 + Terminal 按钮 */}
-        <div className="absolute bottom-4 left-4 z-20 flex items-center gap-3">
-          <div className="flex flex-col text-xs text-gray-500">
-            <span>© 2024 OpenClaw</span>
-            <span>{appVersion}</span>
-          </div>
+        {/* 左下角 Terminal 按钮 + 版权和版本信息 */}
+        <div className="absolute bottom-4 left-4 z-20 flex flex-col gap-2">
+          {/* Terminal 按钮 */}
           <motion.button
             onClick={() => setIsTerminalOpen(true)}
             className="px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-all"
@@ -1030,6 +1034,12 @@ export default function Home() {
             </svg>
             <span>Terminal</span>
           </motion.button>
+          {/* 版权和版本信息 */}
+          <div className="flex flex-col text-xs text-gray-500">
+            <div>YSK Premium {appVersion}</div>
+            <div>Powered by <a href="https://clawbang.cn" target="_blank" rel="noopener noreferrer" className="hover:text-cyan-400 transition-colors">ClawBang.cn</a></div>
+            <div>© 2026 All Rights Reserved</div>
+          </div>
         </div>
         
         {/* 右侧联系人面板 */}
