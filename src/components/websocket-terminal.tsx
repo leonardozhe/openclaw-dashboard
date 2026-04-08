@@ -207,8 +207,14 @@ export function WebsocketTerminal() {
               addTerminalLine(`✓ 客户端模式：${clientMode}`, 'system')
 
               // 简化的 connect 参数 - 不需要 device 签名
-              // 使用设备已批准的 scopes
-              const deviceApprovedScopes = capturedDeviceInfo.scopes || ["operator.read"]
+              // 请求完整的 operator scopes（服务器会根据 token 权限进行授权）
+              const requestedScopes = [
+                "operator.read",
+                "operator.write",
+                "operator.admin",
+                "operator.approvals",
+                "operator.pairing"
+              ]
               
               const connectParams: ConnectParams = {
                 minProtocol: 3,
@@ -222,7 +228,7 @@ export function WebsocketTerminal() {
                   instanceId: capturedInstanceId
                 },
                 role: "operator",
-                scopes: deviceApprovedScopes,
+                scopes: requestedScopes,
                 userAgent: navigator.userAgent || "MeetClaw-Terminal/1.0",
                 locale: "zh-CN",
                 // Token 认证模式：只需要 auth.token，不需要 device 签名
