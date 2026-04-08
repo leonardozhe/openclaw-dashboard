@@ -3,11 +3,11 @@
 import { forwardRef, ForwardedRef } from 'react'
 import { WebsocketTerminal, Channel } from '@/components/websocket-terminal'
 
-interface SmartTerminalProps {
+export interface SmartTerminalProps {
   className?: string
 }
 
-interface WebsocketTerminalRef {
+export interface WebsocketTerminalRef {
   sendChatMessage: (channelId: string, text: string) => boolean
   channels: Channel[]
   selectedChannel: string

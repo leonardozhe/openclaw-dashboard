@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import Image from 'next/image'
 import { motion, AnimatePresence } from 'framer-motion'
 import { LottieLobster } from '@/components/lottie-lobster'
@@ -10,6 +10,7 @@ import { SystemStatusCards } from '@/components/system-status-cards'
 import { ToastNotifications } from '@/components/toast-notifications'
 import { SettingsModal } from '@/components/settings-modal'
 import { AgentProfileModal } from '@/components/agent-profile-modal'
+import { WebsocketTerminalRef } from '@/components/smart-terminal'
 import {
   ParticleBackground,
   AIGlow,
@@ -24,7 +25,6 @@ import {
 import { ChatInput, MessageList } from '@/components/chat-input'
 import { SmartTerminal } from '@/components/smart-terminal'
 import { WebsocketTerminal, Channel } from '@/components/websocket-terminal'
-import { useRef } from 'react'
 import { contacts, Contact, Message, getAIResponse, cn } from '@/lib/utils'
 
 // Channel 数据类型
@@ -46,8 +46,12 @@ export default function Home() {
   const [selectedChatChannel, setSelectedChatChannel] = useState<string>('main')
   const [chatMessages, setChatMessages] = useState<{ id: string; channelId: string; text: string; isUser: boolean; timestamp: number }[]>([])
   const [isVoiceMode, setIsVoiceMode] = useState(false)
-  const websocketTerminalRef = useRef<{ sendChatMessage: (channelId: string, text: string) => boolean; channels: Channel[]; selectedChannel: string; setSelectedChannel: (channel: string) => void }>(null)
+  const websocketTerminalRef = useRef<WebsocketTerminalRef>(null) // 使用 SmartTerminal 导出的类型
+  const chatInputRef = useRef<HTMLInputElement>(null) // 聊天输入框 ref
+  const messagesEndRef = useRef<HTMLDivElement>(null) // 消息列表底部 ref，用于自动滚屏
   const [isSleeping, setIsSleeping] = useState(false)
+  const [isTerminalOpen, setIsTerminalOpen] = useState(false) // Terminal 弹窗状态
+  const [appVersion, setAppVersion] = useState('v2.0.0') // 应用版本号
   const [isAnimating, setIsAnimating] = useState(false)
   const [messages, setMessages] = useState<Message[]>([])
   const [celebrationTrigger, setCelebrationTrigger] = useState(0)
@@ -73,7 +77,7 @@ export default function Home() {
   
   // 从 localStorage 加载聊天记录和自定义设置
   useEffect(() => {
-    const savedMessages = localStorage.getItem('openclaw-chat-messages')
+    const savedChatMessages = localStorage.getItem('openclaw-chat-messages')
     const savedAssistantId = localStorage.getItem('openclaw-chat-assistant')
     const savedTitle = localStorage.getItem('openclaw-custom-title')
     const savedLogo = localStorage.getItem('openclaw-custom-logo')
@@ -83,13 +87,13 @@ export default function Home() {
     const savedAvatarStyle = localStorage.getItem('openclaw-avatar-style')
     const savedEffects = localStorage.getItem('openclaw-effects')
     
-    if (savedMessages) {
+    if (savedChatMessages) {
       try {
-        const parsed = JSON.parse(savedMessages)
+        const parsed = JSON.parse(savedChatMessages)
         // 使用 setTimeout 避免在 effect 中直接调用 setState
-        setTimeout(() => setMessages(parsed), 0)
+        setTimeout(() => setChatMessages(parsed), 0)
       } catch (e) {
-        console.error('Failed to parse saved messages:', e)
+        console.error('Failed to parse saved chat messages:', e)
       }
     }
     
@@ -141,15 +145,15 @@ export default function Home() {
   
   // 保存聊天记录到 localStorage
   useEffect(() => {
-    if (messages.length > 0) {
-      localStorage.setItem('openclaw-chat-messages', JSON.stringify(messages))
+    if (chatMessages.length > 0) {
+      localStorage.setItem('openclaw-chat-messages', JSON.stringify(chatMessages))
     }
     localStorage.setItem('openclaw-chat-assistant', currentAssistant.id)
-  }, [messages, currentAssistant.id])
+  }, [chatMessages, currentAssistant.id])
   
   // 睡眠计时器
   useEffect(() => {
-    if (isVoiceMode || messages.length > 0 || isChatOpen) {
+    if (isVoiceMode || chatMessages.length > 0 || isChatOpen) {
       const wakeTimer = setTimeout(() => {
         setIsSleeping(false)
       }, 0)
@@ -161,7 +165,7 @@ export default function Home() {
     }, 10000)
     
     return () => clearTimeout(timer)
-  }, [isVoiceMode, messages, isChatOpen])
+  }, [isVoiceMode, chatMessages, isChatOpen])
   
   // 初始化加载 channels
   // 初始化加载 channels
@@ -272,11 +276,12 @@ export default function Home() {
       console.warn('⚠️ sendChatMessage 返回 false')
     }
   }, [selectedChatChannel])
-  
-  // 监听 WebSocket 聊天消息事件
+
+  // 监听 WebSocket 聊天消息事件 - 修复：使用正确的依赖数组
   useEffect(() => {
     const handleChatMessage = (event: CustomEvent) => {
       const { channelId, text, payload } = event.detail
+      console.log('📨 收到聊天消息事件:', { channelId, text })
       if (!text) {
         console.warn('⚠️ 聊天消息为空:', payload)
         return
@@ -298,7 +303,80 @@ export default function Home() {
     return () => {
       window.removeEventListener('openclaw:chat:message', handleChatMessage as EventListener)
     }
-  }, [])
+  }, []) // 空依赖数组，确保事件监听器只绑定一次
+
+  // 自动滚屏到最新消息
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [chatMessages])
+
+  // 预制命令列表
+  const presetCommands = [
+    { label: '问候', text: '你好', color: 'cyan' },
+    { label: '介绍', text: '请介绍一下你自己', color: 'green' },
+    { label: '天气', text: '今天天气怎么样？', color: 'orange' },
+    { label: '写诗', text: '帮我写一首诗', color: 'purple' },
+    { label: '笑话', text: '讲个笑话', color: 'pink' },
+    { label: '备份', text: '/backup 备份当前配置', color: 'blue', isCommand: true },
+    { label: '重启', text: '/gateway restart 重启 Gateway', color: 'red', isCommand: true },
+    { label: '压缩', text: '/context compress 压缩上下文', color: 'yellow', isCommand: true }
+  ]
+
+  // /命令自动补全
+  const [commandInput, setCommandInput] = useState('')
+  const [showCommandSuggestions, setShowCommandSuggestions] = useState(false)
+  const [selectedCommandIndex, setSelectedCommandIndex] = useState(0)
+
+  const commandSuggestions = [
+    { cmd: '/backup', desc: '备份当前配置', full: '/backup 备份当前配置' },
+    { cmd: '/gateway restart', desc: '重启 Gateway', full: '/gateway restart 重启 Gateway' },
+    { cmd: '/gateway stop', desc: '停止 Gateway', full: '/gateway stop 停止 Gateway' },
+    { cmd: '/context compress', desc: '压缩上下文', full: '/context compress 压缩上下文' },
+    { cmd: '/memory clear', desc: '清空记忆', full: '/memory clear 清空记忆' },
+    { cmd: '/session reset', desc: '重置会话', full: '/session reset 重置会话' },
+    { cmd: '/model list', desc: '列出模型', full: '/model list 列出可用模型' },
+    { cmd: '/help', desc: '显示帮助', full: '/help 显示帮助信息' }
+  ]
+
+  const handleCommandInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value
+    setCommandInput(value)
+    if (value.startsWith('/')) {
+      setShowCommandSuggestions(true)
+      setSelectedCommandIndex(0)
+    } else {
+      setShowCommandSuggestions(false)
+    }
+  }
+
+  const handleCommandSelect = (fullCommand: string) => {
+    setCommandInput(fullCommand)
+    setShowCommandSuggestions(false)
+    chatInputRef.current?.focus()
+  }
+
+  const handleCommandKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (showCommandSuggestions) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault()
+        setSelectedCommandIndex(prev => (prev + 1) % commandSuggestions.length)
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault()
+        setSelectedCommandIndex(prev => (prev - 1 + commandSuggestions.length) % commandSuggestions.length)
+      } else if (e.key === 'Tab' || e.key === 'Enter') {
+        e.preventDefault()
+        handleCommandSelect(commandSuggestions[selectedCommandIndex].full)
+      } else if (e.key === 'Escape') {
+        setShowCommandSuggestions(false)
+      }
+    } else if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault()
+      if (commandInput.trim()) {
+        handleSendChatMessage(commandInput.trim())
+        setCommandInput('')
+      }
+    }
+  }
   
   // 监听频道加载事件
   useEffect(() => {
@@ -513,148 +591,260 @@ export default function Home() {
           {/* 系统状态卡片 */}
           <SystemStatusCards />
 
-          {/* OpenClaw 智能终端 */}
-          <div className="px-4 py-3">
-            <SmartTerminal ref={websocketTerminalRef} />
-          </div>
-          
-          {/* OpenClaw 聊天框 - 在终端下方 */}
-          <div className="px-4 pb-3">
-            <div className="rounded-xl overflow-hidden border" style={{
-              background: 'rgba(15, 15, 25, 0.8)',
-              borderColor: 'rgba(255, 255, 255, 0.1)'
+          {/* OpenClaw 聊天框 - 最大化占据剩余空间 */}
+          <div className="flex-1 px-4 pb-3 min-h-0">
+            <div className="rounded-xl overflow-hidden border h-full flex flex-col" style={{
+              background: 'rgba(15, 15, 25, 0.95)',
+              borderColor: 'rgba(0, 240, 255, 0.2)',
+              boxShadow: '0 0 30px rgba(0, 240, 255, 0.1)'
             }}>
-              {/* 聊天头部 - 频道选择器 */}
-              <div className="px-4 py-3 border-b flex items-center justify-between" style={{
-                borderColor: 'rgba(255, 255, 255, 0.08)'
+              {/* 聊天头部 - 频道选择器和模型信息 */}
+              <div className="px-4 py-2.5 border-b flex items-center justify-between flex-shrink-0" style={{
+                borderColor: 'rgba(0, 240, 255, 0.15)',
+                background: 'rgba(0, 240, 255, 0.03)'
               }}>
                 <div className="flex items-center gap-3">
-                  <svg className="w-5 h-5 text-cyan-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-                  </svg>
-                  <span className="text-sm font-bold text-white">OpenClaw 聊天</span>
-                </div>
-                <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg" style={{ background: 'rgba(0, 240, 255, 0.1)' }}>
+                    <svg className="w-4 h-4 text-cyan-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                    </svg>
+                    <span className="text-xs font-bold text-white">OpenClaw 聊天</span>
+                  </div>
                   <select
                     value={selectedChatChannel}
                     onChange={(e) => setSelectedChatChannel(e.target.value)}
-                    className="px-3 py-1.5 rounded-lg text-sm bg-white/5 border border-white/10 text-white focus:outline-none focus:border-cyan-500/50"
+                    className="px-2.5 py-1 rounded-lg text-xs bg-white/5 border border-cyan-500/30 text-white focus:outline-none focus:border-cyan-500/50 transition-colors"
                   >
                     {chatChannels.length > 0 ? (
                       chatChannels.map((ch) => (
                         <option key={ch.id} value={ch.id}>
-                          {ch.nameZh || ch.name} ({ch.id})
+                          {ch.nameZh || ch.name}
                         </option>
                       ))
                     ) : (
-                      <option value="main">主频道 (main)</option>
+                      <option value="main">主频道</option>
                     )}
                   </select>
+                  {/* 模型信息显示 */}
+                  <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs" style={{ background: 'rgba(157, 0, 255, 0.1)', color: '#9D00FF', border: '1px solid rgba(157, 0, 255, 0.2)' }}>
+                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                    </svg>
+                    <span>AI 助手</span>
+                  </div>
+                </div>
+                {/* 状态指示器 */}
+                <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1.5 px-2 py-1 rounded text-xs" style={{ background: 'rgba(34, 197, 94, 0.1)', color: '#22C55E', border: '1px solid rgba(34, 197, 94, 0.2)' }}>
+                    <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
+                    <span>在线</span>
+                  </div>
                 </div>
               </div>
               
-              {/* 聊天消息列表 - 默认最小化高度 */}
-              <div className="h-48 overflow-y-auto px-4 py-3 space-y-3" style={{
+              {/* 聊天消息列表 - 占据剩余空间 */}
+              <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3" style={{
                 scrollbarWidth: 'thin',
-                scrollbarColor: 'rgba(255,255,255,0.2) rgba(0,0,0,0.1)'
+                scrollbarColor: 'rgba(0, 240, 255, 0.3) rgba(0, 0, 0, 0.2)'
               }}>
                 {chatMessages.length === 0 && !isAIThinking ? (
                   <div className="flex items-center justify-center h-full text-gray-500 text-sm">
                     <div className="text-center">
-                      <svg className="w-12 h-12 mx-auto mb-2 opacity-50" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-                      </svg>
-                      <p>暂无消息</p>
-                      <p className="text-xs mt-1">在上方选择频道，输入消息后按回车发送</p>
+                      <div className="w-16 h-16 mx-auto mb-3 rounded-full flex items-center justify-center" style={{ background: 'rgba(0, 240, 255, 0.1)', border: '1px solid rgba(0, 240, 255, 0.2)' }}>
+                        <svg className="w-8 h-8 text-cyan-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                        </svg>
+                      </div>
+                      <p className="text-base font-medium text-white">暂无消息</p>
+                      <p className="text-xs mt-2 text-gray-500">选择频道后，输入消息或点击预制命令开始对话</p>
                     </div>
                   </div>
                 ) : (
                   <>
-                    {chatMessages.map((msg) => (
-                      <div
+                    {chatMessages.map((msg, index) => (
+                      <motion.div
                         key={msg.id}
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ duration: 0.2 }}
                         className={`flex ${msg.isUser ? 'justify-end' : 'justify-start'}`}
                       >
                         <div
-                          className={`max-w-[80%] px-4 py-2.5 rounded-lg border ${
+                          className={`max-w-[75%] px-4 py-2.5 rounded-xl border backdrop-blur-sm ${
                             msg.isUser
-                              ? 'bg-gradient-to-r from-cyan-500/20 to-blue-500/20 border-cyan-500/50 text-white'
-                              : 'bg-black/40 border-green-500/50 text-green-100'
+                              ? 'bg-gradient-to-r from-cyan-500/25 to-blue-500/25 border-cyan-400/40 text-white'
+                              : 'bg-gradient-to-r from-green-500/10 to-emerald-500/10 border-green-400/40 text-green-50'
                           }`}
                           style={{
-                            boxShadow: msg.isUser ? '0 0 20px rgba(6, 182, 212, 0.3)' : '0 0 20px rgba(34, 197, 94, 0.2)'
+                            boxShadow: msg.isUser
+                              ? '0 0 25px rgba(6, 182, 212, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.1)'
+                              : '0 0 20px rgba(34, 197, 94, 0.15), inset 0 1px 0 rgba(255, 255, 255, 0.05)'
                           }}
                         >
-                          <p className="text-sm font-mono">{msg.text}</p>
-                          <p className={`text-xs mt-1 font-mono ${msg.isUser ? 'text-cyan-300/70' : 'text-green-400/70'}`}>
-                            {new Date(msg.timestamp).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}
-                          </p>
+                          <div className="flex items-center gap-2 mb-1.5">
+                            <div className={`w-5 h-5 rounded-full flex items-center justify-center ${
+                              msg.isUser
+                                ? 'bg-gradient-to-r from-cyan-400 to-blue-400'
+                                : 'bg-gradient-to-r from-green-400 to-emerald-400'
+                            }`}>
+                              {msg.isUser ? (
+                                <svg className="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 24 24">
+                                  <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/>
+                                </svg>
+                              ) : (
+                                <svg className="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 24 24">
+                                  <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/>
+                                </svg>
+                              )}
+                            </div>
+                            <span className={`text-xs font-medium ${msg.isUser ? 'text-cyan-300' : 'text-green-300'}`}>
+                              {msg.isUser ? '你' : 'AI'}
+                            </span>
+                            <span className="text-xs text-gray-500">
+                              {new Date(msg.timestamp).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}
+                            </span>
+                          </div>
+                          <p className="text-sm leading-relaxed whitespace-pre-wrap">{msg.text}</p>
                         </div>
-                      </div>
+                      </motion.div>
                     ))}
-                    {/* AI 思考动画 - 绿色黑客风格 */}
+                    {/* AI 思考动画 - 专业风格 */}
                     {isAIThinking && (
                       <motion.div
-                        className="flex items-end gap-2"
-                        initial={{ opacity: 0, y: 10 }}
-                        animate={{ opacity: 1, y: 0 }}
+                        className="flex items-center gap-3"
+                        initial={{ opacity: 0, x: -10 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        exit={{ opacity: 0, x: 10 }}
                       >
-                        <div className="w-8 h-8 rounded overflow-hidden flex-shrink-0">
-                          <img
-                            src="/openclaw.png"
-                            alt="OpenClaw"
-                            className="w-full h-full object-cover"
-                          />
-                        </div>
-                        <div className="px-4 py-2 rounded-lg border border-green-500/50 bg-black/40" style={{ boxShadow: '0 0 20px rgba(34, 197, 94, 0.2)' }}>
+                        <div className="w-8 h-8 rounded-full flex items-center justify-center" style={{ background: 'rgba(34, 197, 94, 0.15)', border: '1px solid rgba(34, 197, 94, 0.3)' }}>
                           <div className="flex gap-1">
                             <motion.span
-                              className="w-2 h-2 rounded-full bg-green-400"
-                              animate={{ y: [0, -4, 0], opacity: [0.5, 1, 0.5] }}
-                              transition={{ duration: 0.6, repeat: Infinity, delay: 0 }}
+                              className="w-1.5 h-1.5 rounded-full bg-green-400"
+                              animate={{ y: [0, -3, 0], opacity: [0.4, 1, 0.4] }}
+                              transition={{ duration: 0.5, repeat: Infinity, delay: 0 }}
                             />
                             <motion.span
-                              className="w-2 h-2 rounded-full bg-green-400"
-                              animate={{ y: [0, -4, 0], opacity: [0.5, 1, 0.5] }}
-                              transition={{ duration: 0.6, repeat: Infinity, delay: 0.2 }}
+                              className="w-1.5 h-1.5 rounded-full bg-green-400"
+                              animate={{ y: [0, -3, 0], opacity: [0.4, 1, 0.4] }}
+                              transition={{ duration: 0.5, repeat: Infinity, delay: 0.15 }}
                             />
                             <motion.span
-                              className="w-2 h-2 rounded-full bg-green-400"
-                              animate={{ y: [0, -4, 0], opacity: [0.5, 1, 0.5] }}
-                              transition={{ duration: 0.6, repeat: Infinity, delay: 0.4 }}
+                              className="w-1.5 h-1.5 rounded-full bg-green-400"
+                              animate={{ y: [0, -3, 0], opacity: [0.4, 1, 0.4] }}
+                              transition={{ duration: 0.5, repeat: Infinity, delay: 0.3 }}
                             />
                           </div>
+                        </div>
+                        <div className="px-3 py-1.5 rounded-lg border" style={{
+                          background: 'rgba(34, 197, 94, 0.08)',
+                          border: '1px solid rgba(34, 197, 94, 0.2)',
+                          boxShadow: '0 0 15px rgba(34, 197, 94, 0.1)'
+                        }}>
+                          <span className="text-xs text-green-300 font-medium">AI 正在思考...</span>
                         </div>
                       </motion.div>
                     )}
                   </>
                 )}
+                {/* 自动滚屏锚点 */}
+                <div ref={messagesEndRef} />
+              </div>
+              
+              {/* 预制命令按钮栏 */}
+              <div className="px-4 py-2 border-t flex-shrink-0" style={{
+                borderColor: 'rgba(0, 240, 255, 0.1)',
+                background: 'rgba(0, 240, 255, 0.02)'
+              }}>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-xs text-gray-500 mr-2">快捷命令:</span>
+                  {presetCommands.map((cmd, index) => (
+                    <motion.button
+                      key={index}
+                      onClick={() => handleSendChatMessage(cmd.text)}
+                      className="px-2.5 py-1 rounded text-xs font-medium transition-all hover:scale-105"
+                      style={{
+                        background: `rgba(var(--${cmd.color}-rgb), 0.15)`,
+                        color: `var(--${cmd.color})`,
+                        border: `1px solid rgba(var(--${cmd.color}-rgb), 0.3)`
+                      }}
+                      whileHover={{ scale: 1.05 }}
+                      whileTap={{ scale: 0.95 }}
+                    >
+                      {cmd.label}
+                    </motion.button>
+                  ))}
+                </div>
               </div>
               
               {/* 聊天输入框 */}
-              <div className="px-4 py-3 border-t" style={{ borderColor: 'rgba(255,255,255,0.08)' }}>
+              <div className="px-4 py-3 border-t flex-shrink-0 relative" style={{
+                borderColor: 'rgba(0, 240, 255, 0.15)',
+                background: 'rgba(0, 240, 255, 0.02)'
+              }}>
+                {/* /命令自动补全提示 */}
+                {showCommandSuggestions && (
+                  <div className="absolute bottom-full left-4 right-20 mb-2 rounded-lg border overflow-hidden shadow-lg z-10" style={{
+                    background: 'rgba(15, 15, 25, 0.98)',
+                    borderColor: 'rgba(0, 240, 255, 0.3)',
+                    boxShadow: '0 -4px 20px rgba(0, 0, 0, 0.4)'
+                  }}>
+                    {commandSuggestions.map((suggestion, index) => (
+                      <button
+                        key={suggestion.cmd}
+                        onClick={() => handleCommandSelect(suggestion.full)}
+                        className={`w-full px-4 py-2.5 text-left flex items-center justify-between transition-colors ${
+                          index === selectedCommandIndex
+                            ? 'bg-cyan-500/20'
+                            : 'hover:bg-white/5'
+                        }`}
+                      >
+                        <div>
+                          <span className="text-sm font-mono text-cyan-400">{suggestion.cmd}</span>
+                          <span className="text-xs text-gray-500 ml-2">- {suggestion.desc}</span>
+                        </div>
+                        {index === selectedCommandIndex && (
+                          <span className="text-xs text-gray-500">Tab 选择</span>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                
                 <form
                   onSubmit={(e) => {
                     e.preventDefault()
-                    const input = (e.target as HTMLFormElement).querySelector<HTMLInputElement>('input')
+                    const input = e.currentTarget.querySelector<HTMLInputElement>('input')
                     if (input?.value?.trim()) {
                       handleSendChatMessage(input.value.trim())
                       input.value = ''
+                      setCommandInput('')
                     }
                   }}
                   className="flex items-center gap-2"
                 >
                   <input
+                    ref={chatInputRef}
                     type="text"
-                    placeholder="输入消息，按回车发送..."
-                    className="flex-1 bg-white/5 border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-cyan-500/50 transition-colors"
+                    value={commandInput}
+                    onChange={(e) => setCommandInput(e.target.value)}
+                    onKeyDown={handleCommandKeyDown}
+                    placeholder="输入消息或 / 命令，按回车发送..."
+                    disabled={isAIThinking}
+                    className="flex-1 bg-white/5 border border-cyan-500/20 rounded-lg px-4 py-2.5 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-cyan-500/50 focus:ring-1 focus:ring-cyan-500/20 transition-all disabled:opacity-50"
                   />
-                  <button
+                  <motion.button
                     type="submit"
-                    className="px-4 py-2.5 rounded-lg text-sm font-medium bg-gradient-to-r from-cyan-500 to-blue-500 text-white hover:opacity-90 transition-opacity"
+                    disabled={isAIThinking}
+                    className="px-5 py-2.5 rounded-lg text-sm font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                    style={{
+                      background: 'linear-gradient(135deg, #00F0FF 0%, #00FF66 100%)',
+                      boxShadow: '0 0 15px rgba(0, 240, 255, 0.3)'
+                    }}
+                    whileHover={{ scale: isAIThinking ? 1 : 1.02 }}
+                    whileTap={{ scale: isAIThinking ? 1 : 0.98 }}
                   >
                     发送
-                  </button>
+                  </motion.button>
                 </form>
               </div>
             </div>
@@ -818,6 +1008,30 @@ export default function Home() {
           
         </div>
         
+        {/* 左下角版权和版本信息 + Terminal 按钮 */}
+        <div className="absolute bottom-4 left-4 z-20 flex items-center gap-3">
+          <div className="flex flex-col text-xs text-gray-500">
+            <span>© 2024 OpenClaw</span>
+            <span>{appVersion}</span>
+          </div>
+          <motion.button
+            onClick={() => setIsTerminalOpen(true)}
+            className="px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-all"
+            style={{
+              background: 'rgba(0, 240, 255, 0.1)',
+              border: '1px solid rgba(0, 240, 255, 0.3)',
+              color: '#00F0FF'
+            }}
+            whileHover={{ scale: 1.05, background: 'rgba(0, 240, 255, 0.15)' }}
+            whileTap={{ scale: 0.98 }}
+          >
+            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+            </svg>
+            <span>Terminal</span>
+          </motion.button>
+        </div>
+        
         {/* 右侧联系人面板 */}
         <ContactsPanel
           activeContactId={currentAssistant.id}
@@ -854,6 +1068,59 @@ export default function Home() {
         agentName={selectedAgentName}
         avatarUrl={selectedAgentAvatar}
       />
+      
+      {/* SmartTerminal - 隐藏渲染，仅提供 ref 给聊天功能使用 */}
+      <div className="hidden">
+        <SmartTerminal ref={websocketTerminalRef} />
+      </div>
+      
+      {/* Terminal 弹窗 */}
+      <AnimatePresence>
+        {isTerminalOpen && (
+          <motion.div
+            className="fixed inset-0 z-50 flex items-center justify-center p-8"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+          >
+            <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setIsTerminalOpen(false)} />
+            <motion.div
+              className="relative w-full max-w-5xl h-[80vh] rounded-2xl overflow-hidden"
+              style={{
+                background: 'rgba(15, 15, 25, 0.98)',
+                border: '1px solid rgba(0, 240, 255, 0.3)',
+                boxShadow: '0 0 60px rgba(0, 240, 255, 0.2)'
+              }}
+              initial={{ scale: 0.95, y: 20 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.95, y: 20 }}
+              transition={{ duration: 0.2 }}
+            >
+              {/* Terminal 头部 */}
+              <div className="flex items-center justify-between px-4 py-3 border-b" style={{ borderColor: 'rgba(0, 240, 255, 0.2)', background: 'rgba(0, 240, 255, 0.05)' }}>
+                <div className="flex items-center gap-2">
+                  <svg className="w-5 h-5 text-cyan-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                  </svg>
+                  <span className="text-sm font-medium text-white">OpenClaw Terminal</span>
+                </div>
+                <button
+                  onClick={() => setIsTerminalOpen(false)}
+                  className="p-1.5 rounded-lg hover:bg-white/10 transition-colors"
+                >
+                  <svg className="w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+              {/* Terminal 内容 */}
+              <div className="h-[calc(100%-52px)]">
+                <SmartTerminal className="h-full" />
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </main>
   )
 }
