@@ -176,6 +176,13 @@ export function WebsocketTerminal() {
                 auth?: {
                   token: string;
                 };
+                device?: {
+                  id: string;
+                  publicKey: string;
+                  signature: string;
+                  signedAt: number;
+                  nonce?: string;
+                };
               }
 
               const clientId = capturedDeviceInfo.clientId || "gateway-client"
@@ -257,7 +264,22 @@ export function WebsocketTerminal() {
                 setConnectionStatus('connected')
                 addTerminalLine('✅ 连接认证成功！', 'system')
 
-                const grantedScopes = jsonData.payload?.grantedScopes || []
+                // 从 snapshot.presence 中提取当前设备的 scopes
+                // OpenClaw 返回格式：payload.snapshot.presence[] 包含当前连接的设备信息
+                let grantedScopes: string[] = []
+                
+                if (jsonData.payload?.grantedScopes && Array.isArray(jsonData.payload.grantedScopes)) {
+                  grantedScopes = jsonData.payload.grantedScopes
+                } else if (jsonData.payload?.snapshot?.presence && Array.isArray(jsonData.payload.snapshot.presence)) {
+                  // 查找当前实例的设备
+                  const currentPresence = jsonData.payload.snapshot.presence.find(
+                    (p: { instanceId?: string; mode?: string }) => p.instanceId === capturedInstanceId && p.mode === 'backend'
+                  )
+                  if (currentPresence && currentPresence.scopes && Array.isArray(currentPresence.scopes)) {
+                    grantedScopes = currentPresence.scopes
+                  }
+                }
+                
                 if (grantedScopes.length > 0) {
                   addTerminalLine(`📋 授权范围：${grantedScopes.join(', ')}`, 'system')
 
@@ -280,6 +302,14 @@ export function WebsocketTerminal() {
                     read: hasReadPermission,
                     write: hasWritePermission,
                     scopes: grantedScopes
+                  }));
+                } else {
+                  // 如果没有获取到 scopes，默认给予所有权限（token 认证模式）
+                  addTerminalLine('ℹ️ 未获取到授权范围，默认使用完整权限', 'system')
+                  localStorage.setItem('openclaw-permissions', JSON.stringify({
+                    read: true,
+                    write: true,
+                    scopes: ['operator.read', 'operator.write', 'operator.admin', 'operator.approvals']
                   }));
                 }
 
