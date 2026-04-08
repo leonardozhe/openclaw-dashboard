@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Web Crypto API Signature Test</title>
+</head>
+<body>
+    <h1>Web Crypto API Ed25519 Signature Test</h1>
+    <pre id="output"></pre>
+    
+    <script>
+        const output = document.getElementById('output');
+        const log = (msg) => output.textContent += msg + '\n';
+        
+        async function test() {
+            const privateKeyPem = `-----BEGIN PRIVATE KEY-----
+MC4CAQAwBQYDK2VwBCIEIGoGF71Fw3B2clWTTucF9IB1YnmcXdlNUpC1DWSUaO17
+-----END PRIVATE KEY-----`;
+            
+            const nonce = "b42f6e9f-dfe3-44cb-a982-d4f20bd8c10d";
+            const expectedSignature = 'bY7b1EkGkH5bpKahb1czBntrauH964YdLgncwGwqPps9SzhNhWK1yKB9RRLxi+dk0kBslWnM3EIZOS4THjjHCg==';
+            
+            log('=== Web Crypto API Test ===\n');
+            log('Nonce: ' + nonce);
+            log('Expected signature: ' + expectedSignature);
+            log('');
+            
+            // 从 PEM 提取私钥字节
+            const privateKeyBase64 = privateKeyPem
+                .replace('-----BEGIN PRIVATE KEY-----', '')
+                .replace('-----END PRIVATE KEY-----', '')
+                .replace(/\s/g, '');
+            
+            const privateKeyBytes = Uint8Array.from(atob(privateKeyBase64), c => c.charCodeAt(0));
+            log('Private key bytes (hex): ' + Array.from(privateKeyBytes).map(b => b.toString(16).padStart(2, '0')).join(''));
+            log('Private key length: ' + privateKeyBytes.length);
+            log('');
+            
+            // 方法 1: 使用完整的 PKCS8 私钥（48 字节）
+            try {
+                const key1 = await crypto.subtle.importKey(
+                    'pkcs8',
+                    privateKeyBytes.buffer,
+                    { name: 'Ed25519' },
+                    true,
+                    ['sign']
+                );
+                log('✓ Key imported successfully (PKCS8)');
+                
+                const encoder = new TextEncoder();
+                const data = encoder.encode(nonce);
+                log('Data to sign (hex): ' + Array.from(data).map(b => b.toString(16).padStart(2, '0')).join(''));
+                log('Data length: ' + data.length);
+                
+                const signatureBytes = await crypto.subtle.sign('Ed25519', key1, data);
+                const signatureArray = new Uint8Array(signatureBytes);
+                const signatureBase64 = btoa(String.fromCharCode(...signatureArray));
+                log('Signature (PKCS8): ' + signatureBase64);
+                log('Match expected: ' + (signatureBase64 === expectedSignature));
+                log('');
+            } catch (e) {
+                log('✗ PKCS8 import failed: ' + e.message);
+                log('');
+            }
+            
+            // 方法 2: 使用 32 字节种子作为 raw key
+            try {
+                const seed = privateKeyBytes.slice(16);
+                log('Seed (32 bytes, hex): ' + Array.from(seed).map(b => b.toString(16).padStart(2, '0')).join(''));
+                
+                const key2 = await crypto.subtle.importKey(
+                    'raw',
+                    seed.buffer,
+                    { name: 'Ed25519', namedCurve: 'Ed25519' },
+                    true,
+                    ['sign']
+                );
+                log('✓ Key imported successfully (raw seed)');
+                
+                const encoder = new TextEncoder();
+                const data = encoder.encode(nonce);
+                
+                const signatureBytes = await crypto.subtle.sign('Ed25519', key2, data);
+                const signatureArray = new Uint8Array(signatureBytes);
+                const signatureBase64 = btoa(String.fromCharCode(...signatureArray));
+                log('Signature (raw seed): ' + signatureBase64);
+                log('Match expected: ' + (signatureBase64 === expectedSignature));
+                log('');
+            } catch (e) {
+                log('✗ Raw seed import failed: ' + e.message);
+                log('');
+            }
+            
+            // 方法 3: 使用 64 字节秘密密钥（种子 + 公钥）
+            try {
+                // 从 tweetnacl 推导公钥
+                // 首先我们需要用种子生成公钥
+                // 但浏览器没有 tweetnacl，所以我们手动构造
+                // 实际上，我们需要从 PEM 公钥提取
+                const publicKeyPem = `-----BEGIN PUBLIC KEY-----
+MCowBQYDK2VwAyEAzGcaFELXFhCIhDkBrXO2q024iG+BRdhnHe9XJzJSV/A=
+-----END PUBLIC KEY-----`;
+                
+                const publicKeyBase64 = publicKeyPem
+                    .replace('-----BEGIN PUBLIC KEY-----', '')
+                    .replace('-----END PUBLIC KEY-----', '')
+                    .replace(/\s/g, '');
+                const publicKeyBytes = Uint8Array.from(atob(publicKeyBase64), c => c.charCodeAt(0));
+                const rawPublicKey = publicKeyBytes.slice(12);
+                
+                const seed = privateKeyBytes.slice(16);
+                const secretKey = new Uint8Array(64);
+                secretKey.set(seed, 0);
+                secretKey.set(rawPublicKey, 32);
+                
+                log('64-byte secret key (hex): ' + Array.from(secretKey).map(b => b.toString(16).padStart(2, '0')).join(''));
+                
+                // 注意：Web Crypto API 不支持直接使用 64 字节秘密密钥
+                // 这是 tweetnacl 的格式，不是 Web Crypto 的标准格式
+                log('✗ Web Crypto API does not support 64-byte secret key format');
+                log('');
+            } catch (e) {
+                log('✗ 64-byte secret test failed: ' + e.message);
+                log('');
+            }
+        }
+        
+        test().catch(e => log('Fatal error: ' + e.message));
+    </script>
+</body>
+</html>

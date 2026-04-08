@@ -172,9 +172,9 @@ function parseStatusJson(json: Record<string, unknown>): Partial<OpenClawStatus>
       connectLatencyMs: (gw.connectLatencyMs as number) || 0
     }
 
-    // RPC 信息
+    // RPC 信息 - 改进判断逻辑，同时检查多个字段
     result.rpc = {
-      ok: (gw.reachable as boolean) ?? false,
+      ok: (gw.rpcOk as boolean) ?? (gw['rpc.ok'] as boolean) ?? (gw.reachable as boolean) ?? false,
       url: (gw.url as string) || ''
     }
 
@@ -294,9 +294,9 @@ function parseStatusJson(json: Record<string, unknown>): Partial<OpenClawStatus>
     }
   }
 
-  // 如果没有 health 字段，根据 gateway 状态设置健康状态
+  // 如果没有 health 字段，根据 gateway 和 RPC 状态设置健康状态
   if (result.health === 'unknown') {
-    if (result.gateway?.reachable) {
+    if (result.gateway?.reachable || (result.rpc && result.rpc.ok)) {
       result.health = 'healthy'
     } else {
       result.health = 'error'
@@ -352,6 +352,13 @@ export async function GET() {
         if (jsonOutput.rpc) {
           if (statusData.gateway) {
             statusData.gateway.reachable = jsonOutput.rpc.ok
+          }
+          // 同时更新RPC状态
+          if (!statusData.rpc) {
+            statusData.rpc = {
+              ok: jsonOutput.rpc.ok || false,
+              url: jsonOutput.rpc.url || ''
+            }
           }
         }
       } catch {

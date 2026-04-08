@@ -23,6 +23,8 @@ import {
 } from '@/components/voice-animations'
 import { ChatInput, MessageList } from '@/components/chat-input'
 import { SmartTerminal } from '@/components/smart-terminal'
+import { WebsocketTerminal, Channel } from '@/components/websocket-terminal'
+import { useRef } from 'react'
 import { contacts, Contact, Message, getAIResponse, cn } from '@/lib/utils'
 
 // Channel 数据类型
@@ -40,7 +42,11 @@ export default function Home() {
   // 状态
   const [currentAssistant, setCurrentAssistant] = useState<Contact>(contacts[0])
   const [channels, setChannels] = useState<ChannelData[]>([])
+  const [chatChannels, setChatChannels] = useState<Channel[]>([])
+  const [selectedChatChannel, setSelectedChatChannel] = useState<string>('main')
+  const [chatMessages, setChatMessages] = useState<{ id: string; channelId: string; text: string; isUser: boolean; timestamp: number }[]>([])
   const [isVoiceMode, setIsVoiceMode] = useState(false)
+  const websocketTerminalRef = useRef<{ sendChatMessage: (channelId: string, text: string) => boolean; channels: Channel[]; selectedChannel: string; setSelectedChannel: (channel: string) => void }>(null)
   const [isSleeping, setIsSleeping] = useState(false)
   const [isAnimating, setIsAnimating] = useState(false)
   const [messages, setMessages] = useState<Message[]>([])
@@ -234,6 +240,85 @@ export default function Home() {
       setCelebrationTrigger(prev => prev + 1)
     }, thinkTime)
   }, [currentAssistant])
+  
+  // 发送聊天消息到 OpenClaw
+  const handleSendChatMessage = useCallback((text: string) => {
+    console.log('🔍 handleSendChatMessage 调用:', { text, selectedChatChannel })
+    console.log('🔌 websocketTerminalRef:', websocketTerminalRef.current)
+    
+    if (!websocketTerminalRef.current) {
+      console.warn('⚠️ websocketTerminalRef 为空')
+      return
+    }
+    
+    const success = websocketTerminalRef.current.sendChatMessage(selectedChatChannel, text)
+    console.log('📤 sendChatMessage 返回:', success)
+    
+    if (success) {
+      // 添加用户消息到聊天列表
+      const userMsg = {
+        id: Date.now().toString(),
+        channelId: selectedChatChannel,
+        text,
+        isUser: true,
+        timestamp: Date.now()
+      }
+      console.log('✅ 添加用户消息:', userMsg)
+      setChatMessages(prev => [...prev, userMsg])
+      // 显示 AI 思考状态
+      console.log('💭 设置 AI 思考状态为 true')
+      setIsAIThinking(true)
+    } else {
+      console.warn('⚠️ sendChatMessage 返回 false')
+    }
+  }, [selectedChatChannel])
+  
+  // 监听 WebSocket 聊天消息事件
+  useEffect(() => {
+    const handleChatMessage = (event: CustomEvent) => {
+      const { channelId, text, payload } = event.detail
+      if (!text) {
+        console.warn('⚠️ 聊天消息为空:', payload)
+        return
+      }
+      // 添加 AI 回复到聊天列表
+      const aiMsg = {
+        id: Date.now().toString(),
+        channelId,
+        text,
+        isUser: false,
+        timestamp: Date.now()
+      }
+      setChatMessages(prev => [...prev, aiMsg])
+      // 关闭 AI 思考状态
+      setIsAIThinking(false)
+    }
+    
+    window.addEventListener('openclaw:chat:message', handleChatMessage as EventListener)
+    return () => {
+      window.removeEventListener('openclaw:chat:message', handleChatMessage as EventListener)
+    }
+  }, [])
+  
+  // 监听频道加载事件
+  useEffect(() => {
+    const handleChannelsLoaded = (event: CustomEvent) => {
+      const { channels: loadedChannels } = event.detail
+      setChatChannels(loadedChannels)
+    }
+    
+    window.addEventListener('openclaw:channels:loaded', handleChannelsLoaded as EventListener)
+    return () => {
+      window.removeEventListener('openclaw:channels:loaded', handleChannelsLoaded as EventListener)
+    }
+  }, [])
+  
+  // 同步频道选择到 WebSocket 终端
+  useEffect(() => {
+    if (websocketTerminalRef.current && websocketTerminalRef.current.setSelectedChannel) {
+      websocketTerminalRef.current.setSelectedChannel(selectedChatChannel)
+    }
+  }, [selectedChatChannel])
   
   // 切换语音模式
   const handleToggleVoiceMode = useCallback(() => {
@@ -430,9 +515,150 @@ export default function Home() {
 
           {/* OpenClaw 智能终端 */}
           <div className="px-4 py-3">
-            <SmartTerminal />
+            <SmartTerminal ref={websocketTerminalRef} />
           </div>
           
+          {/* OpenClaw 聊天框 - 在终端下方 */}
+          <div className="px-4 pb-3">
+            <div className="rounded-xl overflow-hidden border" style={{
+              background: 'rgba(15, 15, 25, 0.8)',
+              borderColor: 'rgba(255, 255, 255, 0.1)'
+            }}>
+              {/* 聊天头部 - 频道选择器 */}
+              <div className="px-4 py-3 border-b flex items-center justify-between" style={{
+                borderColor: 'rgba(255, 255, 255, 0.08)'
+              }}>
+                <div className="flex items-center gap-3">
+                  <svg className="w-5 h-5 text-cyan-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                  </svg>
+                  <span className="text-sm font-bold text-white">OpenClaw 聊天</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <select
+                    value={selectedChatChannel}
+                    onChange={(e) => setSelectedChatChannel(e.target.value)}
+                    className="px-3 py-1.5 rounded-lg text-sm bg-white/5 border border-white/10 text-white focus:outline-none focus:border-cyan-500/50"
+                  >
+                    {chatChannels.length > 0 ? (
+                      chatChannels.map((ch) => (
+                        <option key={ch.id} value={ch.id}>
+                          {ch.nameZh || ch.name} ({ch.id})
+                        </option>
+                      ))
+                    ) : (
+                      <option value="main">主频道 (main)</option>
+                    )}
+                  </select>
+                </div>
+              </div>
+              
+              {/* 聊天消息列表 - 默认最小化高度 */}
+              <div className="h-48 overflow-y-auto px-4 py-3 space-y-3" style={{
+                scrollbarWidth: 'thin',
+                scrollbarColor: 'rgba(255,255,255,0.2) rgba(0,0,0,0.1)'
+              }}>
+                {chatMessages.length === 0 && !isAIThinking ? (
+                  <div className="flex items-center justify-center h-full text-gray-500 text-sm">
+                    <div className="text-center">
+                      <svg className="w-12 h-12 mx-auto mb-2 opacity-50" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                      </svg>
+                      <p>暂无消息</p>
+                      <p className="text-xs mt-1">在上方选择频道，输入消息后按回车发送</p>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    {chatMessages.map((msg) => (
+                      <div
+                        key={msg.id}
+                        className={`flex ${msg.isUser ? 'justify-end' : 'justify-start'}`}
+                      >
+                        <div
+                          className={`max-w-[80%] px-4 py-2.5 rounded-lg border ${
+                            msg.isUser
+                              ? 'bg-gradient-to-r from-cyan-500/20 to-blue-500/20 border-cyan-500/50 text-white'
+                              : 'bg-black/40 border-green-500/50 text-green-100'
+                          }`}
+                          style={{
+                            boxShadow: msg.isUser ? '0 0 20px rgba(6, 182, 212, 0.3)' : '0 0 20px rgba(34, 197, 94, 0.2)'
+                          }}
+                        >
+                          <p className="text-sm font-mono">{msg.text}</p>
+                          <p className={`text-xs mt-1 font-mono ${msg.isUser ? 'text-cyan-300/70' : 'text-green-400/70'}`}>
+                            {new Date(msg.timestamp).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}
+                          </p>
+                        </div>
+                      </div>
+                    ))}
+                    {/* AI 思考动画 - 绿色黑客风格 */}
+                    {isAIThinking && (
+                      <motion.div
+                        className="flex items-end gap-2"
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                      >
+                        <div className="w-8 h-8 rounded overflow-hidden flex-shrink-0">
+                          <img
+                            src="/openclaw.png"
+                            alt="OpenClaw"
+                            className="w-full h-full object-cover"
+                          />
+                        </div>
+                        <div className="px-4 py-2 rounded-lg border border-green-500/50 bg-black/40" style={{ boxShadow: '0 0 20px rgba(34, 197, 94, 0.2)' }}>
+                          <div className="flex gap-1">
+                            <motion.span
+                              className="w-2 h-2 rounded-full bg-green-400"
+                              animate={{ y: [0, -4, 0], opacity: [0.5, 1, 0.5] }}
+                              transition={{ duration: 0.6, repeat: Infinity, delay: 0 }}
+                            />
+                            <motion.span
+                              className="w-2 h-2 rounded-full bg-green-400"
+                              animate={{ y: [0, -4, 0], opacity: [0.5, 1, 0.5] }}
+                              transition={{ duration: 0.6, repeat: Infinity, delay: 0.2 }}
+                            />
+                            <motion.span
+                              className="w-2 h-2 rounded-full bg-green-400"
+                              animate={{ y: [0, -4, 0], opacity: [0.5, 1, 0.5] }}
+                              transition={{ duration: 0.6, repeat: Infinity, delay: 0.4 }}
+                            />
+                          </div>
+                        </div>
+                      </motion.div>
+                    )}
+                  </>
+                )}
+              </div>
+              
+              {/* 聊天输入框 */}
+              <div className="px-4 py-3 border-t" style={{ borderColor: 'rgba(255,255,255,0.08)' }}>
+                <form
+                  onSubmit={(e) => {
+                    e.preventDefault()
+                    const input = (e.target as HTMLFormElement).querySelector<HTMLInputElement>('input')
+                    if (input?.value?.trim()) {
+                      handleSendChatMessage(input.value.trim())
+                      input.value = ''
+                    }
+                  }}
+                  className="flex items-center gap-2"
+                >
+                  <input
+                    type="text"
+                    placeholder="输入消息，按回车发送..."
+                    className="flex-1 bg-white/5 border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-cyan-500/50 transition-colors"
+                  />
+                  <button
+                    type="submit"
+                    className="px-4 py-2.5 rounded-lg text-sm font-medium bg-gradient-to-r from-cyan-500 to-blue-500 text-white hover:opacity-90 transition-opacity"
+                  >
+                    发送
+                  </button>
+                </form>
+              </div>
+            </div>
+          </div>
           
           {/* 悬浮聊天框 - 点击头像时显示 */}
           <AnimatePresence>

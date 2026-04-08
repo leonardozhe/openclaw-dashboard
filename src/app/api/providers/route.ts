@@ -3,40 +3,6 @@ import { readFileSync, existsSync } from 'fs'
 import { homedir } from 'os'
 import { join } from 'path'
 
-// 测量到 baseUrl 的延迟
-async function measureLatency(baseUrl: string): Promise<number | null> {
-  if (!baseUrl) return null
-  
-  try {
-    const startTime = Date.now()
-    const controller = new AbortController()
-    const timeoutId = setTimeout(() => controller.abort(), 5000) // 5秒超时
-    
-    // 尝试访问 baseUrl 的根路径或 /models 端点
-    const testUrl = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl
-    
-    await fetch(`${testUrl}/models`, {
-      method: 'HEAD',
-      signal: controller.signal,
-      headers: {
-        'Content-Type': 'application/json'
-      }
-    }).catch(() => {
-      // 如果 HEAD 失败，尝试 GET
-      return fetch(testUrl, {
-        method: 'GET',
-        signal: controller.signal
-      }).catch(() => null)
-    })
-    
-    clearTimeout(timeoutId)
-    const latency = Date.now() - startTime
-    return latency
-  } catch {
-    return null
-  }
-}
-
 interface Model {
   id: string
   name: string
@@ -421,17 +387,17 @@ export async function GET() {
   try {
     const homeDir = homedir()
     const configPath = join(homeDir, '.openclaw', 'openclaw.json')
-    
+
     if (!existsSync(configPath)) {
       return NextResponse.json({
         providers: [],
         error: 'OpenClaw config not found'
       })
     }
-    
+
     const configContent = readFileSync(configPath, 'utf-8')
     const config: OpenClawConfig = JSON.parse(configContent)
-    
+
     const providers: {
       id: string
       name: string
@@ -449,40 +415,31 @@ export async function GET() {
       activated: boolean
       contextTokens?: number
     }[] = []
-    
+
     // 获取当前使用的模型
     const primaryModel = config.agents?.defaults?.model?.primary || ''
     const usedModels = Object.keys(config.agents?.defaults?.models || {})
-    
+
     // 解析供应商
     if (config.models?.providers) {
-      // 并行测量所有供应商的延迟
-      const providerEntries = Object.entries(config.models.providers)
-      const latencyPromises = providerEntries.map(async ([, provider]) => {
-        const providerBaseUrl = (provider as Provider).baseUrl || ''
-        return measureLatency(providerBaseUrl)
-      })
-      
-      const latencies = await Promise.all(latencyPromises)
-      
-      for (let i = 0; i < providerEntries.length; i++) {
-        const [providerId, provider] = providerEntries[i]
+      // 创建所有供应商的基本信息，延迟暂时设为null
+      for (const [providerId, provider] of Object.entries(config.models.providers)) {
         const providerBaseUrl = (provider as Provider).baseUrl || ''
         const vendorInfo = getVendorInfo(providerId, providerBaseUrl)
         const hasApiKey = !!(provider as Provider).apiKey
-        
+
         // 检查该供应商下是否有模型在使用
         const providerModels = (provider as Provider).models || []
-        
+
         const models = providerModels.map(model => ({
           id: model.id,
           name: getModelDisplayName(model.id, model.name),
           inUse: usedModels.includes(`${providerId}/${model.id}`) || primaryModel === `${providerId}/${model.id}`
         }))
-        
+
         // 供应商已激活：有 API Key 且有模型配置
         const activated = hasApiKey && models.length > 0
-        
+
         providers.push({
           id: providerId,
           name: vendorInfo.nameZh, // 默认中文名称
@@ -490,7 +447,7 @@ export async function GET() {
           nameZh: vendorInfo.nameZh,
           icon: vendorInfo.icon,
           baseUrl: providerBaseUrl || vendorInfo.baseUrl,
-          latency: latencies[i],
+          latency: null, // 初始延迟值为null，稍后由前端通过ping测试获取
           models,
           hasApiKey,
           activated,
@@ -498,7 +455,7 @@ export async function GET() {
         })
       }
     }
-    
+
     return NextResponse.json({
       providers,
       primaryModel,

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useImperativeHandle, forwardRef } from 'react'
 import { Terminal as TerminalIcon, Play, Square, Copy, Download, RefreshCw } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 
@@ -11,13 +11,19 @@ interface TerminalLine {
   type: 'input' | 'output' | 'system' | 'error'
 }
 
+export interface Channel {
+  id: string
+  name: string
+  nameZh: string
+}
+
 interface OpenClawCommand {
   command: string
   description: string
   category: 'status' | 'config' | 'session' | 'model' | 'agent' | 'channel' | 'node' | 'memory' | 'logs' | 'cron' | 'skills' | 'device' | 'update' | 'system' | 'help'
 }
 
-export function WebsocketTerminal() {
+export const WebsocketTerminal = forwardRef<{ sendChatMessage: (channelId: string, text: string) => boolean; channels: Channel[]; selectedChannel: string; setSelectedChannel: (channel: string) => void }>((props, ref) => {
   const [isConnected, setIsConnected] = useState(false)
   const [connectionStatus, setConnectionStatus] = useState<'disconnected' | 'connecting' | 'connected' | 'error'>('disconnected')
   const [inputCommand, setInputCommand] = useState('')
@@ -29,10 +35,14 @@ export function WebsocketTerminal() {
     ];
     return initialLines;
   })
-  const [isMinimized, setIsMinimized] = useState(false)
+  const [isMinimized, setIsMinimized] = useState(true)
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [availableCommands, setAvailableCommands] = useState<OpenClawCommand[]>([])
   const [isLoading, setIsLoading] = useState(false)
+  const [channels, setChannels] = useState<{ id: string; name: string; nameZh: string }[]>([])
+  const [selectedChannel, setSelectedChannel] = useState<string>('main')
+  const [currentInstanceId, setCurrentInstanceId] = useState<string>('')
+  const [currentDeviceId, setCurrentDeviceId] = useState<string>('')
 
   const wsRef = useRef<WebSocket | null>(null)
   const terminalRef = useRef<HTMLDivElement>(null)
@@ -63,6 +73,14 @@ export function WebsocketTerminal() {
     const connect = async () => {
       setIsLoading(true)
       setConnectionStatus('connecting')
+
+      // 🔑 从 URL hash 中提取 token（官方 UI 格式：#token=xxx）
+      let urlToken: string | null = null
+      const hash = window.location.hash
+      if (hash && hash.startsWith('#token=')) {
+        urlToken = hash.substring(7) // 移除 '#token=' 前缀
+        console.log('🔑 从 URL hash 中提取 token:', urlToken?.substring(0, 20) + '...')
+      }
 
       // 先从 API 获取 Gateway 认证信息和设备信息
       let deviceInfo: {
@@ -121,16 +139,24 @@ export function WebsocketTerminal() {
         }
 
         const wsUrl = `${wsProtocol}${window.location.hostname}:${gatewayPort}`;
+        console.log('🔌 WebSocket 连接信息:', {
+          protocol: wsProtocol,
+          hostname: window.location.hostname,
+          port: gatewayPort,
+          url: wsUrl,
+          gatewayTlsEnabled,
+          pageProtocol: window.location.protocol
+        });
         console.log(`尝试连接到：${wsUrl}`);
         const ws = new WebSocket(wsUrl)
-
-        ws.onopen = () => {
-          console.log('Connected to OpenClaw WebSocket:', wsUrl)
-          addTerminalLine(`✓ 已连接到 OpenClaw 服务 (${wsUrl})`, 'system')
-        }
+        
+        // 🔍 关键：将 WebSocket 实例存储到 ref 中
+        wsRef.current = ws
+        console.log('🔌 wsRef.current 已设置为:', ws)
 
         const capturedDeviceInfo = deviceInfo
         const capturedGatewayToken = gatewayToken
+        const capturedUrlToken = urlToken  // 🔑 捕获 URL 中的 token
 
         // 使用 deviceId 作为稳定的 instanceId
         let instanceId: string
@@ -144,19 +170,58 @@ export function WebsocketTerminal() {
         }
         const capturedInstanceId = instanceId
 
+        ws.onopen = () => {
+          console.log('✅ Connected to OpenClaw WebSocket:', wsUrl)
+          console.log('🔌 ws.onopen: wsRef.current === ws:', wsRef.current === ws)
+          console.log('🔌 ws.onopen: ws.readyState:', ws.readyState)
+          addTerminalLine(`✓ 已连接到 OpenClaw 服务 (${wsUrl})`, 'system')
+          addTerminalLine(`🔌 WebSocket readyState: ${ws.readyState} (0=CONNECTING, 1=OPEN, 2=CLOSING, 3=CLOSED)`, 'system')
+        }
+
+        ws.onerror = (error) => {
+          console.error('❌ WebSocket error:', error);
+          console.error('❌ WebSocket readyState:', ws.readyState);
+          console.error('❌ WebSocket URL:', ws.url);
+          console.error('❌ 连接信息:', {
+            url: wsUrl,
+            port: gatewayPort,
+            tlsEnabled: gatewayTlsEnabled,
+            pageProtocol: window.location.protocol
+          });
+          addTerminalLine(`❌ WebSocket 连接错误：${error}`, 'error');
+        }
+
+        ws.onclose = (event) => {
+          console.log('WebSocket closed:', event.code, event.reason);
+          console.log('❌ WebSocket close event:', event);
+          setIsConnected(false)
+          setIsLoading(false)
+          setConnectionStatus('disconnected')
+          if (event.code === 1000 || event.code === 1001) {
+            addTerminalLine('连接已正常关闭', 'system')
+          } else if (event.code === 1008) {
+            addTerminalLine('❌ 认证失败 (1008): Policy Violation', 'error')
+            addTerminalLine(`原因：${event.reason || 'device identity required'}`, 'error')
+          } else {
+            addTerminalLine(`连接已断开 (code: ${event.code})`, 'error')
+            if (event.reason) {
+              addTerminalLine(`原因：${event.reason}`, 'error')
+            }
+          }
+        }
+
         ws.onmessage = async (event) => {
           try {
             const message = event.data
-            // 调试：打印所有原始消息
             console.log('RAW WebSocket message:', message)
             const jsonData = JSON.parse(message)
             console.log('Parsed message:', JSON.stringify(jsonData, null, 2))
 
-            // 尝试多种可能的消息格式
             const messageType = jsonData.event || jsonData.type || jsonData.method
             
             if (messageType === "connect.challenge" || messageType === "challenge") {
               addTerminalLine('收到连接挑战，正在发送认证信息...', 'system')
+              console.log('📥 收到挑战，准备发送 connect 请求')
 
               interface ConnectParams {
                 minProtocol: number;
@@ -186,28 +251,69 @@ export function WebsocketTerminal() {
               }
 
               const clientId = capturedDeviceInfo.clientId || "gateway-client"
-              const clientMode = capturedDeviceInfo.clientMode || "backend"
+              // 🔑 关键修复：client.mode 是客户端类型，role 是角色
+              // client.mode 必须是：backend, frontend, cli, mobile, embedded 之一
+              // role 才是：operator, admin, viewer 等
+              // 优先使用已配对设备中存储的 mode 值
+              const clientMode = capturedDeviceInfo.clientMode || "backend"  // 客户端类型
+              const role = "operator"       // 角色 - 决定权限
               const platform = capturedDeviceInfo.platform || "darwin"
+              
+              // 🔍 调试：检查 token 是否有效
+              const effectiveToken = capturedUrlToken || capturedGatewayToken || capturedDeviceInfo.token
+              console.log('🔑 使用的认证 token:', effectiveToken ? effectiveToken.substring(0, 20) + '...' : '无')
+              console.log('🔑 token 来源:', capturedUrlToken ? 'URL' : capturedGatewayToken ? 'Gateway' : capturedDeviceInfo.token ? 'Device' : '无')
+              console.log('🔑 capturedDeviceInfo.clientMode:', capturedDeviceInfo.clientMode)
+              console.log('🔑 capturedDeviceInfo.platform:', capturedDeviceInfo.platform)
+              
+              console.log('🔑 连接认证信息:')
+              console.log('  - clientId:', clientId)
+              console.log('  - client.mode:', clientMode)
+              console.log('  - role:', role)
+              console.log('  - capturedUrlToken:', capturedUrlToken ? '存在' : '不存在')
+              console.log('  - capturedGatewayToken:', capturedGatewayToken ? '存在' : '不存在')
+              console.log('  - capturedDeviceInfo.token:', capturedDeviceInfo.token ? '存在' : '不存在')
 
-              // 关键简化：Gateway auth mode 为 "token" 时，只需要提供 token 即可认证
-              // 不需要设备签名（device signature）
+              // 🔑 根据 OpenClaw 协议：优先使用持久化的设备令牌（deviceToken）进行认证
+              // 设备令牌是配对后 Gateway 发放的，绑定到连接角色 + 作用域
               let authToken: string | undefined = undefined
+              let authDeviceToken: string | undefined = undefined
               
-              // 优先使用 gateway token（来自 openclaw.json），其次使用设备 token（来自 paired.json）
-              authToken = capturedGatewayToken || capturedDeviceInfo.token || undefined
+              // 🔑 认证 token 优先级：
+              // 1. URL hash 中的 token（官方 UI 格式：#token=xxx）- 最高优先级
+              // 2. 持久化的设备令牌（来自前次连接的 hello-ok.auth.deviceToken）
+              // 3. Gateway token（来自 openclaw.json）
+              // 4. 设备 token（来自 API）
               
-              if (authToken) {
-                if (capturedGatewayToken && capturedDeviceInfo.token) {
-                  addTerminalLine(`✓ 使用 Gateway token 进行认证`, 'system')
-                  addTerminalLine(`✓ 设备 token 也可用`, 'system')
-                } else if (capturedGatewayToken) {
-                  addTerminalLine(`✓ 使用 Gateway token 进行认证`, 'system')
-                } else {
-                  addTerminalLine(`✓ 使用设备 token 进行认证`, 'system')
+              // 1. 最高优先级：URL hash 中的 token
+              if (capturedUrlToken) {
+                authToken = capturedUrlToken
+                addTerminalLine('✓ 使用 URL 中的 token 进行认证', 'system')
+                console.log('🔑 URL token:', capturedUrlToken.substring(0, 20) + '...')
+              }
+              // 2. 其次：持久化的设备令牌
+              else {
+                const storedDeviceToken = localStorage.getItem('openclaw-device-token')
+                if (storedDeviceToken) {
+                  authDeviceToken = storedDeviceToken
+                  addTerminalLine('✓ 使用持久化的设备令牌进行认证', 'system')
                 }
-              } else {
+                // 3. 再次：Gateway token
+                else if (capturedGatewayToken) {
+                  authToken = capturedGatewayToken
+                  addTerminalLine('✓ 使用 Gateway token 进行认证', 'system')
+                }
+                // 4. 最后：设备 token
+                else if (capturedDeviceInfo.token) {
+                  authToken = capturedDeviceInfo.token
+                  addTerminalLine('✓ 使用设备 token 进行认证', 'system')
+                }
+              }
+              
+              if (!authToken && !authDeviceToken) {
                 addTerminalLine('⚠️ 未找到认证 token', 'error')
                 addTerminalLine('💡 请检查 ~/.openclaw/openclaw.json 中的 gateway.auth.token', 'system')
+                addTerminalLine('💡 或者在 URL 中添加 #token=xxx 参数', 'system')
               }
 
               addTerminalLine(`✓ 客户端 ID: ${clientId}`, 'system')
@@ -223,7 +329,10 @@ export function WebsocketTerminal() {
                 "operator.pairing"
               ]
               
-              const connectParams: ConnectParams = {
+              // OpenClaw Gateway 协议格式：
+              // params 包含：minProtocol, maxProtocol, client, role, scopes, userAgent, locale, auth
+              // scopes 必须在 params 顶层，与 client、role 并列
+              const connectParams = {
                 minProtocol: 3,
                 maxProtocol: 3,
                 client: {
@@ -231,101 +340,229 @@ export function WebsocketTerminal() {
                   displayName: "MeetClaw Terminal",
                   version: "1.0.0",
                   platform: platform,
-                  mode: clientMode,
+                  mode: clientMode,  // 客户端类型：backend
                   instanceId: capturedInstanceId
                 },
-                role: "operator",
+                role: role,  // 角色：operator
                 scopes: requestedScopes,
                 userAgent: navigator.userAgent || "MeetClaw-Terminal/1.0",
                 locale: "zh-CN",
-                // Token 认证模式：只需要 auth.token，不需要 device 签名
-                auth: authToken ? {
+                // 🔑 根据 OpenClaw 协议：优先使用 deviceToken 认证，其次使用 token 认证
+                auth: authDeviceToken ? {
+                  deviceToken: authDeviceToken
+                } : authToken ? {
                   token: authToken
                 } : undefined
               }
-
+              
               const connectMsg = {
                 type: "req",
                 id: `conn-${Date.now()}`,
                 method: "connect",
                 params: connectParams
               }
-
-              // 调试：打印发送的 connect 消息
+              
+              // 🔍 调试：打印发送的 connect 消息
               console.log('=== 发送 connect 请求 ===')
               console.log('connectMsg:', JSON.stringify(connectMsg, null, 2))
-              console.log('auth.token:', connectParams.auth?.token?.substring(0, 20) + '...')
+              if (connectParams.auth?.token) {
+                console.log('🔑 auth.token:', connectParams.auth.token.substring(0, 20) + '...')
+              }
+              if (connectParams.auth?.deviceToken) {
+                console.log('🔑 auth.deviceToken:', connectParams.auth.deviceToken.substring(0, 20) + '...')
+              }
+              console.log('📋 scopes:', connectParams.scopes)
+              console.log('🎭 role:', connectParams.role)
+              console.log('🎭 client.mode:', connectParams.client.mode)
 
               ws.send(JSON.stringify(connectMsg))
+              addTerminalLine(`🔑 使用 ${authDeviceToken ? 'deviceToken' : authToken ? 'token' : '无认证'} 进行认证`, 'system')
+              addTerminalLine(`🎭 客户端类型 (mode): ${clientMode}`, 'system')
+              addTerminalLine(`🎭 角色 (role): ${role}`, 'system')
             } else if (jsonData.type === "res" && jsonData.id?.startsWith("conn-")) {
+              console.log('🔍 CONNECT 响应收到:', {
+                ok: jsonData.ok,
+                id: jsonData.id,
+                hasPayload: !!jsonData.payload
+              })
+              
+              if (!jsonData.ok) {
+                const errorCode = jsonData.error?.code
+                const errorMessage = jsonData.error?.message
+                console.log('❌ CONNECT 响应错误:', {
+                  code: errorCode,
+                  message: errorMessage,
+                  fullError: jsonData.error
+                })
+                addTerminalLine(`❌ 认证失败 (${errorCode}): ${errorMessage}`, 'error')
+                if (errorCode === 1008 || errorMessage?.includes('Policy Violation')) {
+                  addTerminalLine('💡 原因：client.mode 或 role 参数不匹配', 'system')
+                  addTerminalLine('💡 请检查 OpenClaw 控制面板中的设备配置', 'system')
+                  addTerminalLine('📋 当前发送的参数：mode=backend, role=operator', 'system')
+                }
+                setIsLoading(false)
+                setConnectionStatus('disconnected')
+                return
+              }
+              
               if (jsonData.ok) {
                 setIsConnected(true)
                 setIsLoading(false)
                 setConnectionStatus('connected')
                 addTerminalLine('✅ 连接认证成功！', 'system')
 
-                // 从 snapshot.presence 中提取当前设备的 scopes
-                // OpenClaw 返回格式：payload.snapshot.presence[] 包含当前连接的设备信息
-                let grantedScopes: string[] = []
+                // 🔍 调试：打印完整的 connect 响应
+                console.log('📥 CONNECT 响应 payload 完整内容:')
+                console.log(JSON.stringify(jsonData, null, 2))
                 
-                if (jsonData.payload?.grantedScopes && Array.isArray(jsonData.payload.grantedScopes)) {
-                  grantedScopes = jsonData.payload.grantedScopes
-                } else if (jsonData.payload?.snapshot?.presence && Array.isArray(jsonData.payload.snapshot.presence)) {
-                  // 查找当前实例的设备
-                  const currentPresence = jsonData.payload.snapshot.presence.find(
-                    (p: { instanceId?: string; mode?: string }) => p.instanceId === capturedInstanceId && p.mode === 'backend'
-                  )
-                  if (currentPresence && currentPresence.scopes && Array.isArray(currentPresence.scopes)) {
-                    grantedScopes = currentPresence.scopes
-                  }
+                // 🔑 关键：检查连接模式和授权范围
+                const presence = jsonData.payload?.snapshot?.presence
+                if (presence && Array.isArray(presence)) {
+                  const currentPresence = presence.find((p: { mode?: string }) => p.mode === 'operator' || p.mode === 'backend')
+                  console.log('🎭 当前连接模式 (presence.mode):', currentPresence?.mode)
+                  console.log('📋 当前连接 scopes (presence.scopes):', currentPresence?.scopes)
+                  addTerminalLine(`🎭 连接模式：${currentPresence?.mode || 'unknown'}`, 'system')
+                  addTerminalLine(`📋 授权范围：${(currentPresence?.scopes || []).join(', ')}`, 'system')
                 }
                 
-                if (grantedScopes.length > 0) {
-                  addTerminalLine(`📋 授权范围：${grantedScopes.join(', ')}`, 'system')
+                console.log('📥 payload.grantedScopes:', jsonData.payload?.grantedScopes)
+                console.log('📥 payload.snapshot.presence:', jsonData.payload?.snapshot?.presence)
+                console.log('📥 payload.auth:', jsonData.payload?.auth)
+                console.log('📥 payload.auth.scopes:', jsonData.payload?.auth?.scopes)
+                console.log('📥 payload.auth.mode:', jsonData.payload?.auth?.mode)
 
-                  const hasWritePermission = grantedScopes.includes('operator.write') || grantedScopes.includes('operator.admin');
-                  const hasReadPermission = grantedScopes.includes('operator.read') || grantedScopes.includes('operator.write') || grantedScopes.includes('operator.admin');
-
-                  if (hasReadPermission) {
-                    addTerminalLine('✅ 具备读取权限', 'system');
-                  } else {
-                    addTerminalLine('⚠️ 缺少读取权限，部分命令可能无法执行', 'system');
-                  }
-
-                  if (hasWritePermission) {
-                    addTerminalLine('✅ 具备写入权限', 'system');
-                  } else {
-                    addTerminalLine('⚠️ 缺少写入权限，聊天和修改操作将被拒绝', 'system');
-                  }
-
-                  localStorage.setItem('openclaw-permissions', JSON.stringify({
-                    read: hasReadPermission,
-                    write: hasWritePermission,
-                    scopes: grantedScopes
-                  }));
-                } else {
-                  // 如果没有获取到 scopes，默认给予所有权限（token 认证模式）
-                  addTerminalLine('ℹ️ 未获取到授权范围，默认使用完整权限', 'system')
-                  localStorage.setItem('openclaw-permissions', JSON.stringify({
-                    read: true,
-                    write: true,
-                    scopes: ['operator.read', 'operator.write', 'operator.admin', 'operator.approvals']
-                  }));
-                }
-
-                if (jsonData.payload?.server?.version) {
-                  addTerminalLine(`🖥️ 服务器版本：${jsonData.payload.server.version}`, 'system')
-                }
-
+                // 先设置 instanceId 和 deviceId，以便后续权限提取使用
                 if (jsonData.payload?.authToken) {
                   localStorage.setItem('openclaw-auth-token', jsonData.payload.authToken)
                 }
                 if (jsonData.payload?.deviceId) {
-                  localStorage.setItem('openclaw-device-id', jsonData.payload.deviceId)
+                  const deviceId = jsonData.payload.deviceId;
+                  localStorage.setItem('openclaw-device-id', deviceId)
+                  setCurrentDeviceId(deviceId);
                 }
                 if (capturedInstanceId) {
                   localStorage.setItem('openclaw-instance-id', capturedInstanceId)
+                  setCurrentInstanceId(capturedInstanceId);
                 }
+                
+                // 🔑 关键：持久化设备令牌（deviceToken）供后续连接使用
+                // 根据 OpenClaw 协议：配对后 Gateway 会发放 deviceToken，客户端应持久化并在后续连接中复用
+                if (jsonData.payload?.auth?.deviceToken) {
+                  const deviceToken = jsonData.payload.auth.deviceToken;
+                  localStorage.setItem('openclaw-device-token', deviceToken);
+                  console.log('🔑 已持久化设备令牌:', deviceToken.substring(0, 20) + '...');
+                  addTerminalLine('✓ 已保存设备令牌', 'system');
+                }
+                
+                // 同时持久化 grantedScopes，以便在重新连接时复用已批准的作用域
+                if (jsonData.payload?.auth?.scopes && Array.isArray(jsonData.payload.auth.scopes)) {
+                  localStorage.setItem('openclaw-auth-scopes', JSON.stringify(jsonData.payload.auth.scopes));
+                  console.log('📋 已持久化授权作用域:', jsonData.payload.auth.scopes);
+                }
+
+                // 🔍 调试：打印完整的 payload 结构
+                console.log('🔍 CONNECT 响应完整 payload 结构:')
+                console.log('  - payload:', JSON.stringify(jsonData.payload, null, 2))
+                console.log('  - payload.grantedScopes:', jsonData.payload?.grantedScopes)
+                console.log('  - payload.auth:', jsonData.payload?.auth)
+                console.log('  - payload.auth.scopes:', jsonData.payload?.auth?.scopes)
+                console.log('  - payload.auth.mode:', jsonData.payload?.auth?.mode)
+                console.log('  - payload.snapshot.presence:', jsonData.payload?.snapshot?.presence)
+                console.log('  - payload.snapshot.presence[0]:', jsonData.payload?.snapshot?.presence?.[0])
+                
+                // 🔑 关键：检查 presence 中每个设备的模式和 scopes
+                if (jsonData.payload?.snapshot?.presence && Array.isArray(jsonData.payload.snapshot.presence)) {
+                  jsonData.payload.snapshot.presence.forEach((p: any, index: number) => {
+                    console.log(`  - presence[${index}]:`, {
+                      mode: p.mode,
+                      scopes: p.scopes,
+                      instanceId: p.instanceId,
+                      deviceId: p.deviceId
+                    })
+                  })
+                }
+                
+                // 从 snapshot.presence 中提取当前设备的 scopes
+                // OpenClaw 返回格式：payload.snapshot.presence[] 包含当前连接的设备信息
+                let grantedScopes: string[] = []
+                
+                // 1. 优先使用 payload.auth.scopes（OpenClaw 标准返回格式）
+                if (jsonData.payload?.auth?.scopes && Array.isArray(jsonData.payload.auth.scopes)) {
+                  grantedScopes = jsonData.payload.auth.scopes
+                  console.log('✅ 从 payload.auth.scopes 获取授权范围:', grantedScopes)
+                }
+                // 2. 其次使用 payload.grantedScopes（最直接的方式）
+                else if (jsonData.payload?.grantedScopes && Array.isArray(jsonData.payload.grantedScopes)) {
+                  grantedScopes = jsonData.payload.grantedScopes
+                  console.log('✅ 从 payload.grantedScopes 获取授权范围:', grantedScopes)
+                }
+                // 3. 从 snapshot.presence 中提取
+                else if (jsonData.payload?.snapshot?.presence && Array.isArray(jsonData.payload.snapshot.presence)) {
+                  // 查找当前连接的设备（可能是 backend 或 operator 模式）
+                  const currentPresence = jsonData.payload.snapshot.presence.find(
+                    (p: { instanceId?: string; mode?: string; deviceId?: string }) =>
+                      p.mode === 'backend' || p.mode === 'operator'
+                  )
+                  if (currentPresence && currentPresence.scopes && Array.isArray(currentPresence.scopes)) {
+                    grantedScopes = currentPresence.scopes
+                    console.log('✅ 从 snapshot.presence 获取授权范围:', grantedScopes)
+                    console.log('🎭 连接模式:', currentPresence.mode)
+                  } else {
+                    console.log('⚠️ 未找到 backend/operator mode 的 presence 或没有 scopes')
+                    // 尝试使用第一个 presence
+                    const firstPresence = jsonData.payload.snapshot.presence[0]
+                    if (firstPresence && firstPresence.scopes && Array.isArray(firstPresence.scopes)) {
+                      grantedScopes = firstPresence.scopes
+                      console.log('✅ 使用第一个 presence 的授权范围:', grantedScopes)
+                    }
+                  }
+                }
+                
+                console.log('🔍 提取的授权范围:', grantedScopes)
+                
+                // 当服务器未返回明确授权范围时，默认给予完整权限
+                // 这是因为使用 token 认证时，服务器信任 token 持有者拥有完整权限
+                if (grantedScopes.length === 0) {
+                  grantedScopes = ['operator.read', 'operator.write', 'operator.admin', 'operator.approvals', 'operator.pairing']
+                  addTerminalLine('ℹ️ 未获取到授权范围，默认使用完整权限 (operator.read, operator.write, operator.admin)', 'system')
+                  console.log('✅ 使用默认授权范围:', grantedScopes)
+                } else {
+                  addTerminalLine(`📋 授权范围：${grantedScopes.join(', ')}`, 'system')
+                }
+                
+                console.log('💾 存储到 localStorage 的授权范围:', grantedScopes)
+                
+                // 将授权范围存储到 localStorage，供其他组件使用
+                localStorage.setItem('openclaw-granted-scopes', JSON.stringify(grantedScopes))
+                
+                // 🔍 验证存储
+                const storedScopes = localStorage.getItem('openclaw-granted-scopes')
+                console.log('🔍 验证存储：localStorage.openclaw-granted-scopes =', storedScopes)
+                
+                // 检查权限
+                const hasWritePermission = grantedScopes.includes('operator.write') || grantedScopes.includes('operator.admin');
+                const hasReadPermission = grantedScopes.includes('operator.read') || grantedScopes.includes('operator.write') || grantedScopes.includes('operator.admin');
+
+                if (hasReadPermission) {
+                  addTerminalLine('✅ 具备读取权限', 'system');
+                }
+
+                if (hasWritePermission) {
+                  addTerminalLine('✅ 具备写入权限', 'system');
+                }
+
+                localStorage.setItem('openclaw-permissions', JSON.stringify({
+                  read: hasReadPermission,
+                  write: hasWritePermission,
+                  scopes: grantedScopes
+                }));
+
+                if (jsonData.payload?.server?.version) {
+                  addTerminalLine(`🖥️ 服务器版本：${jsonData.payload.server.version}`, 'system')
+                }
+                
+                // 连接成功后自动获取频道列表 - 改为在 useEffect 中处理
+                // 避免 ESLint 错误：Cannot access variable before it is declared
               } else {
                 addTerminalLine(`❌ 连接失败：${jsonData.error?.message || '未知错误'}`, 'error')
                 setConnectionStatus('error')
@@ -347,11 +584,83 @@ export function WebsocketTerminal() {
                 console.log('Health event received:', jsonData)
               } else if (jsonData.event === "presence") {
                 console.log('Presence event received:', jsonData)
+                // 从 presence 事件中更新权限
+                const presence = jsonData.payload?.presence;
+                if (presence && Array.isArray(presence)) {
+                  const currentPresence = presence.find(
+                    (p: { instanceId?: string; mode?: string; deviceId?: string }) =>
+                      p.instanceId === currentInstanceId && p.mode === 'backend'
+                  ) || presence.find(
+                    (p: { deviceId?: string }) => p.deviceId === currentDeviceId
+                  );
+                  if (currentPresence && currentPresence.scopes && Array.isArray(currentPresence.scopes)) {
+                    const grantedScopes = currentPresence.scopes;
+                    console.log('🔐 从 presence 事件更新权限:', grantedScopes);
+                    const hasWritePermission = grantedScopes.includes('operator.write') || grantedScopes.includes('operator.admin');
+                    const hasReadPermission = grantedScopes.includes('operator.read') || grantedScopes.includes('operator.write') || grantedScopes.includes('operator.admin');
+                    localStorage.setItem('openclaw-permissions', JSON.stringify({
+                      read: hasReadPermission,
+                      write: hasWritePermission,
+                      scopes: grantedScopes
+                    }));
+                    addTerminalLine(`📋 权限已更新：${grantedScopes.join(', ')}`, 'system');
+                  }
+                }
+              } else if (jsonData.event === "chat.message") {
+                // 聊天消息事件 - OpenClaw Gateway 推送的 AI 回复
+                const chatPayload = jsonData.payload || {}
+                const messageText = chatPayload?.text || chatPayload?.content || JSON.stringify(chatPayload)
+                const channelId = chatPayload?.channelId || 'main'
+                addTerminalLine(`💬 [${channelId}] AI: ${messageText}`, 'output')
+                // 触发自定义事件通知 UI 更新
+                window.dispatchEvent(new CustomEvent('openclaw:chat:message', {
+                  detail: { channelId, text: messageText, payload: chatPayload }
+                }))
               } else {
                 addTerminalLine(`${jsonData.event}: ${JSON.stringify(jsonData.payload, null, 2)}`, 'output')
               }
             } else if (jsonData.type === "res") {
-              if (jsonData.ok) {
+              console.log('🔍 收到 res 响应:', {
+                id: jsonData.id,
+                ok: jsonData.ok,
+                error: jsonData.error
+              })
+              
+              // 处理 chat.send 响应 - JSON-RPC 标准响应格式
+              if (jsonData.id?.startsWith('chat-')) {
+                if (jsonData.ok) {
+                  console.log('✅ Chat message sent successfully');
+                  addTerminalLine('✅ 消息发送成功', 'system');
+                } else {
+                  const errorMsg = jsonData.error?.message || 'Unknown error';
+                  const errorCode = jsonData.error?.code;
+                  console.log('❌ Chat send error:', { code: errorCode, message: errorMsg });
+                  console.log('📋 当前 localStorage.openclaw-granted-scopes:', localStorage.getItem('openclaw-granted-scopes'));
+                  console.log('🔑 当前 localStorage.openclaw-device-token:', localStorage.getItem('openclaw-device-token')?.substring(0, 20) + '...');
+                  addTerminalLine(`❌ 发送失败：${errorMsg}`, 'error');
+                  if (errorCode === 'INVALID_REQUEST' || errorMsg.includes('missing scope')) {
+                    addTerminalLine('💡 权限不足，请在 OpenClaw 中检查设备权限', 'system');
+                    addTerminalLine('🔑 请确认已使用正确的 token 进行认证', 'system');
+                  }
+                }
+              }
+              // 处理 channels.list 响应
+              else if (jsonData.id?.startsWith('channels-') && jsonData.ok) {
+                const channelsData = jsonData.payload
+                if (Array.isArray(channelsData)) {
+                  const parsedChannels: Channel[] = channelsData.map((ch: { id?: string; channelId?: string; name?: string; channelName?: string; nameZh?: string }) => ({
+                    id: ch.id || ch.channelId || 'unknown',
+                    name: ch.name || ch.channelName || 'Unknown',
+                    nameZh: ch.nameZh || ch.name || '未知频道'
+                  }))
+                  setChannels(parsedChannels)
+                  addTerminalLine(`📺 已加载 ${parsedChannels.length} 个频道`, 'system')
+                  // 触发自定义事件，让父组件可以获取频道列表
+                  window.dispatchEvent(new CustomEvent('openclaw:channels:loaded', {
+                    detail: { channels: parsedChannels }
+                  }))
+                }
+              } else if (jsonData.ok) {
                 addTerminalLine(JSON.stringify(jsonData.payload, null, 2), 'output')
               } else {
                 addTerminalLine(`❌ 错误：${jsonData.error?.message || '未知错误'}`, 'error')
@@ -420,6 +729,94 @@ export function WebsocketTerminal() {
       }
     }
   }, [])
+
+  // 获取频道列表
+  const fetchChannels = () => {
+    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
+      return
+    }
+    
+    const fetchMsg = {
+      type: "req",
+      id: `channels-${Date.now()}`,
+      method: "channels.list",
+      params: {}
+    }
+    
+    wsRef.current.send(JSON.stringify(fetchMsg))
+  }
+  
+  // 连接成功后自动获取频道列表
+  useEffect(() => {
+    if (connectionStatus === 'connected') {
+      const timer = setTimeout(() => {
+        fetchChannels()
+      }, 500)
+      return () => clearTimeout(timer)
+    }
+  }, [connectionStatus])
+  
+  // 发送聊天消息 - 符合 OpenClaw Gateway JSON-RPC 协议
+  const sendChatMessage = (channelId: string, text: string) => {
+    console.log('🔍 sendChatMessage 调用:', { channelId, text })
+    console.log('🔌 WebSocket 状态:', wsRef.current?.readyState)
+    
+    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
+      console.warn('⚠️ WebSocket 未就绪')
+      addTerminalLine('WebSocket 连接未就绪', 'error')
+      return false
+    }
+    
+    // 从 localStorage 获取授权范围
+    const grantedScopesStr = localStorage.getItem('openclaw-granted-scopes')
+    let grantedScopes: string[] = []
+    if (grantedScopesStr) {
+      try {
+        grantedScopes = JSON.parse(grantedScopesStr)
+        console.log('📋 已获取授权范围:', grantedScopes)
+      } catch (e) {
+        console.warn('Could not parse granted scopes:', e)
+      }
+    } else {
+      console.log('⚠️ 未找到授权范围，使用默认值')
+    }
+    
+    // 检查是否有写入权限
+    const hasWritePermission = grantedScopes.includes('operator.write') ||
+                               grantedScopes.includes('operator.admin')
+    
+    // 构建标准 JSON-RPC 请求
+    // OpenClaw Gateway 格式：{ type: "req", id: string, method: string, params: object }
+    // 权限验证通过认证 token 处理，不需要在请求中指定 scope
+    const chatMsg = {
+      type: "req",
+      id: `chat-${Date.now()}`,
+      method: "chat.send",
+      params: {
+        channelId: channelId,
+        text: text
+      }
+    }
+    
+    console.log('📤 发送聊天消息:', JSON.stringify(chatMsg, null, 2))
+    wsRef.current.send(JSON.stringify(chatMsg))
+    addTerminalLine(`📤 发送消息到 [${channelId}]: ${text}`, 'input')
+    
+    if (!hasWritePermission) {
+      addTerminalLine('⚠️ 当前可能缺少 operator.write 权限，消息可能发送失败', 'system')
+      addTerminalLine(`📋 当前授权范围：${grantedScopes.join(', ') || '无'}`, 'system')
+    }
+    
+    return true
+  }
+  
+  // 暴露方法给父组件
+  useImperativeHandle(ref, () => ({
+    sendChatMessage,
+    channels,
+    selectedChannel,
+    setSelectedChannel
+  }))
 
   // 发送命令
   const sendCommand = (command: string) => {
@@ -970,4 +1367,6 @@ OpenClaw Gateway WebSocket API 帮助
       </AnimatePresence>
     </motion.div>
   )
-}
+})
+
+WebsocketTerminal.displayName = 'WebsocketTerminal'

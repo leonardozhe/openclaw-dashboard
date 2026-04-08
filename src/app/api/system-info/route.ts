@@ -103,7 +103,7 @@ export async function GET() {
       }
     } catch (error) {
       // 如果系统特定方法失败，回退到原始方法
-      console.warn('Could not get precise memory stats, using fallback:', error.message);
+      console.warn('Could not get precise memory stats, using fallback:', error instanceof Error ? error.message : error);
       freeMemory = os.freemem();
       usedMemory = totalMemory - freeMemory;
       memoryUsage = totalMemory > 0 ? Math.max(0, Math.min(100, (usedMemory / totalMemory) * 100)) : 0;
@@ -191,7 +191,7 @@ async function getCPUUsage(): Promise<number> {
       // 读取 /proc/stat 获取CPU使用率
       const fs = require('fs');
       const procStat = fs.readFileSync('/proc/stat', 'utf8');
-      const cpuLines = procStat.split('\n').filter(line => line.startsWith('cpu '));
+      const cpuLines = procStat.split('\n').filter((line: string) => line.startsWith('cpu '));
       if (cpuLines.length > 0) {
         const cpuData = cpuLines[0].trim().split(/\s+/).slice(1).map(Number);
         const [user, nice, system, idle, iowait, irq, softirq] = cpuData;
@@ -204,7 +204,7 @@ async function getCPUUsage(): Promise<number> {
     }
   } catch (error) {
     // 如果系统命令失败，回退到原始方法
-    console.warn('Could not get precise CPU usage via system command, using fallback:', error.message);
+    console.warn('Could not get precise CPU usage via system command, using fallback:', error instanceof Error ? error.message : error);
   }
 
   // 回退到基于 Node.js os 模块的采样方法

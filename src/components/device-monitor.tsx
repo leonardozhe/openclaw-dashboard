@@ -591,45 +591,55 @@ export function DeviceMonitor() {
       const data = await response.json()
 
       if (data.providers) {
-        // 仅更新延迟部分，保持其他数据不变
+        // 通过后端API来获取网络延迟，而不是从前端直接访问外部API
         const updatedProviders = await Promise.all(data.providers.map(async (originalProvider: ProviderData) => {
-          // 重新测量延迟
-          let newLatency = null;
-          if (originalProvider.baseUrl) {
-            try {
-              const startTime = Date.now();
-              const controller = new AbortController()
-              const timeoutId = setTimeout(() => controller.abort(), 5000) // 5秒超时
-
-              const testUrl = originalProvider.baseUrl.endsWith('/')
-                ? originalProvider.baseUrl.slice(0, -1)
-                : originalProvider.baseUrl
-
-              await fetch(`${testUrl}/models`, {
-                method: 'HEAD',
-                signal: controller.signal,
-                headers: {
-                  'Content-Type': 'application/json'
-                }
-              }).catch(() => {
-                // 如果 HEAD 失败，尝试 GET
-                return fetch(testUrl, {
-                  method: 'GET',
-                  signal: controller.signal
-                }).catch(() => null)
-              })
-
-              clearTimeout(timeoutId)
-              newLatency = Date.now() - startTime
-            } catch (err) {
-              newLatency = null
+          // 为了防止CORS错误，使用后端代理来测试延迟
+          try {
+            // 仅当有有效的baseUrl时才测试延迟
+            if (!originalProvider.baseUrl || originalProvider.baseUrl.trim() === '') {
+              return {
+                ...originalProvider,
+                latency: null
+              };
             }
-          }
 
-          // 保持原始的提供商其他信息，只更新延迟
-          return {
-            ...originalProvider,
-            latency: newLatency
+            // 从baseUrl中提取主机名用于ping测试
+            let hostname;
+            try {
+              const url = new URL(originalProvider.baseUrl);
+              hostname = url.hostname;
+            } catch {
+              return {
+                ...originalProvider,
+                latency: null
+              };
+            }
+
+            const startTime = Date.now();
+            // 使用ping延迟测试API来测试纯网络延迟
+            const testResponse = await fetch('/api/test-ping-latency', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({ hostname })
+            });
+
+            const testResult = await testResponse.json();
+            const newLatency = testResult.latency || null;
+
+            // 保持原始的提供商其他信息，只更新延迟
+            return {
+              ...originalProvider,
+              latency: newLatency
+            };
+          } catch (err) {
+            console.error(`Failed to test ping latency for provider ${originalProvider.id}:`, err);
+            // 保持原始延迟或设置为null
+            return {
+              ...originalProvider,
+              latency: null
+            };
           }
         }))
 
@@ -652,8 +662,8 @@ export function DeviceMonitor() {
       fetchProviders()
     }, 900000) // 15 分钟 = 15 * 60 * 1000 毫秒
 
-    // 每 3 秒刷新一次延迟信息
-    const latencyRefreshInterval = setInterval(refreshLatencies, 3000) // 3 秒 = 3000 毫秒
+    // 每 15 秒刷新一次延迟信息（对于ping测试，使用更长的间隔以减少网络负载）
+    const latencyRefreshInterval = setInterval(refreshLatencies, 15000) // 15 秒 = 15000 毫秒
 
     return () => {
       clearInterval(fullRefreshInterval)
