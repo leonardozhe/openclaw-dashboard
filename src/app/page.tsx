@@ -49,7 +49,8 @@ export default function Home() {
   const [selectedAgentId, setSelectedAgentId] = useState<string>('main')
   // 为每个 agent 维护独立的聊天记录，使用 Record<agentId, messages[]>
   const [agentChatMessages, setAgentChatMessages] = useState<Record<string, { id: string; text: string; isUser: boolean; timestamp: number; model?: string; upvotes?: number; downvotes?: number; ctxPercent?: number }[]>>({})
-  const [selectedChatChannel, setSelectedChatChannel] = useState<string>('main')
+  // selectedChatChannel 与 selectedAgentId 同步
+  const selectedChatChannel = selectedAgentId
   const [chatMessages, setChatMessages] = useState<{ id: string; channelId: string; text: string; isUser: boolean; timestamp: number; model?: string; upvotes?: number; downvotes?: number; ctxPercent?: number }[]>([])
   const [isVoiceMode, setIsVoiceMode] = useState(false)
   const websocketTerminalRef = useRef<WebsocketTerminalRef>(null) // 使用 SmartTerminal 导出的类型
@@ -308,7 +309,7 @@ export default function Home() {
       return
     }
     
-    const success = websocketTerminalRef.current.sendChatMessage(selectedChatChannel, text)
+    const success = websocketTerminalRef.current.sendChatMessage(selectedAgentId, text)
     console.log('📤 sendChatMessage 返回:', success)
     
     if (success) {
@@ -329,9 +330,15 @@ export default function Home() {
     } else {
       console.warn('⚠️ sendChatMessage 返回 false')
     }
-  }, [selectedAgentId, selectedChatChannel])
+  }, [selectedAgentId])
 
   // 监听 WebSocket 聊天消息事件 - 按 agent 存储消息
+  // 使用 ref 来避免闭包问题
+  const selectedAgentIdRef = useRef(selectedAgentId)
+  useEffect(() => {
+    selectedAgentIdRef.current = selectedAgentId
+  }, [selectedAgentId])
+  
   useEffect(() => {
     const handleChatMessage = (event: CustomEvent) => {
       const { channelId, text, payload } = event.detail
@@ -353,7 +360,7 @@ export default function Home() {
       }
       setAgentChatMessages(prev => ({
         ...prev,
-        [selectedAgentId]: [...(prev[selectedAgentId] || []), aiMsg]
+        [selectedAgentIdRef.current]: [...(prev[selectedAgentIdRef.current] || []), aiMsg]
       }))
       // 关闭 AI 思考状态
       setIsAIThinking(false)
@@ -366,7 +373,7 @@ export default function Home() {
       window.removeEventListener('openclaw:chat:message', handleChatMessage as EventListener)
       console.log('🔕 已移除 openclaw:chat:message 事件监听器')
     }
-  }, [selectedAgentId]) // 依赖 selectedAgentId
+  }, []) // 空依赖，只注册一次
 
   // 自动滚屏到最新消息
   // 获取当前选中 agent 的聊天记录
@@ -379,7 +386,7 @@ export default function Home() {
 
   // 预制命令列表（状态管理，支持删除和自定义）
   // 使用初始化函数从 localStorage 加载
-  const [presetCommands, setPresetCommands] = useState<Array<{ label: string; text: string; color: string; isCommand?: boolean }>>(() => {
+  const [presetCommands, setPresetCommands] = useState<Array<{ label: string; text: string; isCommand?: boolean }>>(() => {
     const savedCommands = localStorage.getItem('openclaw-preset-commands')
     if (savedCommands) {
       try {
@@ -392,14 +399,14 @@ export default function Home() {
       }
     }
     return [
-      { label: '问候', text: '你好', color: 'cyan' },
-      { label: '介绍', text: '请介绍一下你自己', color: 'green' },
-      { label: '天气', text: '今天天气怎么样？', color: 'orange' },
-      { label: '写诗', text: '帮我写一首诗', color: 'purple' },
-      { label: '笑话', text: '讲个笑话', color: 'pink' },
-      { label: '备份', text: '/backup 备份当前配置', color: 'blue', isCommand: true },
-      { label: '重启', text: '/gateway restart 重启 Gateway', color: 'red', isCommand: true },
-      { label: '压缩', text: '/compact 压缩上下文', color: 'yellow', isCommand: true }
+      { label: '问候', text: '你好' },
+      { label: '介绍', text: '请介绍一下你自己' },
+      { label: '天气', text: '今天天气怎么样？' },
+      { label: '写诗', text: '帮我写一首诗' },
+      { label: '笑话', text: '讲个笑话' },
+      { label: '备份', text: '/backup 备份当前配置', isCommand: true },
+      { label: '重启', text: '/gateway restart 重启 Gateway', isCommand: true },
+      { label: '压缩', text: '/compact 压缩上下文', isCommand: true }
     ]
   })
   
@@ -407,7 +414,6 @@ export default function Home() {
   const [isAddCommandOpen, setIsAddCommandOpen] = useState(false)
   const [newCommandLabel, setNewCommandLabel] = useState('')
   const [newCommandText, setNewCommandText] = useState('')
-  const [newCommandColor, setNewCommandColor] = useState('cyan')
   
   // 保存命令到 localStorage
   useEffect(() => {
@@ -424,15 +430,13 @@ export default function Home() {
     if (newCommandLabel.trim() && newCommandText.trim()) {
       setPresetCommands(prev => [...prev, {
         label: newCommandLabel.trim(),
-        text: newCommandText.trim(),
-        color: newCommandColor
+        text: newCommandText.trim()
       }])
       setNewCommandLabel('')
       setNewCommandText('')
-      setNewCommandColor('cyan')
       setIsAddCommandOpen(false)
     }
-  }, [newCommandLabel, newCommandText, newCommandColor])
+  }, [newCommandLabel, newCommandText])
 
   // /命令自动补全
   const [commandInput, setCommandInput] = useState('')
@@ -946,7 +950,7 @@ export default function Home() {
                         animate={{ opacity: 1, x: 0 }}
                         exit={{ opacity: 0, x: 10 }}
                       >
-                        <div className="w-8 h-8 rounded-full flex items-center justify-center" style={{ background: 'rgba(34, 197, 94, 0.15)', border: '1px solid rgba(34, 197, 94, 0.3)' }}>
+                        <div className="w-8 h-8 rounded-full flex items-center justify-center" style={{ background: 'rgba(34, 197, 94, 0.15)' }}>
                           <div className="flex gap-1">
                             <motion.span
                               className="w-1.5 h-1.5 rounded-full bg-green-400"
@@ -986,9 +990,9 @@ export default function Home() {
                         onClick={() => handleSendChatMessage(cmd.text)}
                         className="px-2.5 py-1 rounded text-xs font-medium transition-all hover:scale-105"
                         style={{
-                          background: `rgba(var(--${cmd.color}-rgb), 0.15)`,
-                          color: `var(--${cmd.color})`,
-                          border: `1px solid rgba(var(--${cmd.color}-rgb), 0.3)`
+                          background: 'rgba(0, 240, 255, 0.15)',
+                          color: '#00F0FF',
+                          border: '1px solid rgba(0, 240, 255, 0.3)'
                         }}
                         whileHover={{ scale: 1.05 }}
                         whileTap={{ scale: 0.95 }}
@@ -1232,14 +1236,14 @@ export default function Home() {
                           initial={{ opacity: 0, y: 10 }}
                           animate={{ opacity: 1, y: 0 }}
                         >
-                          <div className="w-8 h-8 rounded-full overflow-hidden flex-shrink-0" style={{ border: `1px solid ${currentAssistant.color}40` }}>
+                          <div className="w-8 h-8 rounded-full overflow-hidden flex-shrink-0">
                             <img
                               src={currentAssistant.avatar || `https://api.dicebear.com/9.x/${avatarStyle}/svg?seed=${currentAssistant.id}`}
                               alt={currentAssistant.name}
                               className="w-full h-full object-cover"
                             />
                           </div>
-                          <div className="px-4 py-2 rounded-xl" style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)' }}>
+                          <div className="px-4 py-2 rounded-xl" style={{ background: 'rgba(255,255,255,0.05)' }}>
                             <div className="flex gap-1">
                               <motion.span
                                 className="w-2 h-2 rounded-full bg-gray-400"
@@ -1384,21 +1388,6 @@ export default function Home() {
                     rows={3}
                     className="w-full px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-white text-sm focus:outline-none focus:border-cyan-500/50 transition-colors resize-none"
                   />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-400 mb-2">颜色</label>
-                  <div className="flex flex-wrap gap-2">
-                    {['cyan', 'green', 'blue', 'purple', 'pink', 'orange', 'red', 'yellow'].map((color) => (
-                      <button
-                        key={color}
-                        onClick={() => setNewCommandColor(color)}
-                        className={`w-8 h-8 rounded-lg border-2 transition-all ${
-                          newCommandColor === color ? 'border-white scale-110' : 'border-transparent hover:scale-105'
-                        }`}
-                        style={{ background: `var(--${color})` }}
-                      />
-                    ))}
-                  </div>
                 </div>
               </div>
               
