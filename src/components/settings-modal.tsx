@@ -35,7 +35,8 @@ interface SettingsModalProps {
   currentUnit: string
   currentAvatarStyle: string
   currentEffects: string[]
-  onSave: (title: string, logo: string, lobsterCount: number, teamName: string, unit: string, avatarStyle: string, effects: string[]) => void
+  currentMainProcessName: string
+  onSave: (title: string, logo: string, lobsterCount: number, teamName: string, unit: string, avatarStyle: string, effects: string[], mainProcessName: string) => void
 }
 
 function SettingsModalContent({
@@ -47,6 +48,7 @@ function SettingsModalContent({
   currentUnit,
   currentAvatarStyle,
   currentEffects,
+  currentMainProcessName,
   onSave
 }: Omit<SettingsModalProps, 'isOpen'>) {
   const [title, setTitle] = useState(currentTitle)
@@ -57,6 +59,7 @@ function SettingsModalContent({
   const [unit, setUnit] = useState(currentUnit)
   const [avatarStyle, setAvatarStyle] = useState(currentAvatarStyle)
   const [effects, setEffects] = useState<string[]>(currentEffects)
+  const [mainProcessName, setMainProcessName] = useState(currentMainProcessName)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const handleLogoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -90,7 +93,7 @@ function SettingsModalContent({
   }
 
   const handleSave = () => {
-    onSave(title, logo, lobsterCount, teamName, unit, avatarStyle, effects)
+    onSave(title, logo, lobsterCount, teamName, unit, avatarStyle, effects, mainProcessName)
     onClose()
   }
   
@@ -300,6 +303,19 @@ function SettingsModalContent({
           </div>
           <p className="text-xs text-gray-500">开启后将在页面显示对应的视觉效果</p>
         </div>
+
+        {/* Main Process Name Setting */}
+        <div className="space-y-3">
+          <label className="block text-sm font-medium text-gray-300">主进程名称</label>
+          <input
+            type="text"
+            value={mainProcessName}
+            onChange={(e) => setMainProcessName(e.target.value)}
+            placeholder="龙虾船长"
+            className="w-full px-4 py-3 rounded-lg border border-white/10 bg-black/30 text-white placeholder-gray-500 focus:outline-none focus:border-cyan-500/50 focus:ring-1 focus:ring-cyan-500/30 transition-colors"
+          />
+          <p className="text-xs text-gray-500">设置右侧联系人主进程的默认名称，默认为「龙虾船长」</p>
+        </div>
       </div>
 
       {/* Footer */}
@@ -331,6 +347,7 @@ export function SettingsModal({
   currentUnit,
   currentAvatarStyle,
   currentEffects,
+  currentMainProcessName,
   onSave
 }: SettingsModalProps) {
   const handleBackdropClick = (e: React.MouseEvent) => {
@@ -360,6 +377,7 @@ export function SettingsModal({
             currentUnit={currentUnit}
             currentAvatarStyle={currentAvatarStyle}
             currentEffects={currentEffects}
+            currentMainProcessName={currentMainProcessName}
             onSave={onSave}
           />
         </motion.div>

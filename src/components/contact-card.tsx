@@ -10,6 +10,9 @@ import { Clock, FileText, AlertCircle, Info, AlertTriangle, Bug, RefreshCw } fro
 export interface AgentData {
   id: string
   name: string
+  alias?: string  // Agent 的别名（显示用）
+  slug?: string   // Agent 的 slug 名字（显示在别名下方）
+  bio?: string    // Agent 的简介
   status: 'online' | 'busy' | 'away' | 'offline'
   lastActive: number
   channel: string
@@ -19,7 +22,7 @@ export interface AgentData {
 }
 
 // 将 AgentData 转换为 Contact 格式
-function agentToContact(agent: AgentData, index: number, avatarStyle: string = 'bottts'): Contact {
+function agentToContact(agent: AgentData, index: number, avatarStyle: string = 'bottts', mainProcessName: string = '龙虾船长'): Contact {
   // 根据渠道和来源生成友好的标题
   const channelNames: Record<string, string> = {
     'webchat': 'Web 聊天',
@@ -28,27 +31,43 @@ function agentToContact(agent: AgentData, index: number, avatarStyle: string = '
     'telegram': 'Telegram',
     'terminal': '终端',
     'api': 'API',
-    'unknown': '未知渠道'
+    'unknown': '未知渠道',
+    '未知渠道': '未知渠道'  // 已经是中文，直接返回
   }
   
   const originNames: Record<string, string> = {
     'openclaw-tui': 'OpenClaw TUI',
     'openclaw-web': 'OpenClaw Web',
     'openclaw-cli': 'OpenClaw CLI',
-    'unknown': '未知来源'
+    'openclaw': 'OpenClaw',
+    'unknown': '未知来源',
+    '未知来源': '未知来源'  // 已经是中文，直接返回
   }
   
   const channel = channelNames[agent.channel] || agent.channel
   const origin = originNames[agent.origin] || agent.origin
-  // 在名字后面添加会话类型标签
-  const chatTypeLabel = agent.chatType === 'permanent' ? ' [永久]' : ' [临时]'
-  const displayName = (agent.name === 'main' ? '龙虾船长' : agent.name) + chatTypeLabel
+  
+  // 显示名称：使用 alias（如果有），否则使用 agent.name
+  // 对于 main agent，使用用户自定义的名称
+  const baseName = agent.name === 'main'
+    ? mainProcessName
+    : (agent.alias || agent.name)
+  
+  // 副标题：显示 slug（如果有），否则显示来源和渠道
+  const subTitle = agent.slug 
+    ? `${agent.slug} · ${channel}`
+    : `${origin} · ${channel}`
+  
+  // Bio: 使用 agent 的 bio（如果有），否则显示最后活跃时间
+  const bioText = agent.bio 
+    ? agent.bio 
+    : `最后活跃：${formatLastActive(agent.lastActive)}`
   
   return {
     id: agent.id,
-    name: displayName,
-    title: `${origin} · ${channel}`,
-    bio: `最后活跃: ${formatLastActive(agent.lastActive)}`,
+    name: baseName,
+    title: subTitle,
+    bio: bioText,
     skills: [],
     status: agent.status,
     color: getStatusColor(agent.status),
@@ -229,7 +248,7 @@ export function ContactCard({ contact, isActive, onClick, index }: ContactCardPr
         <div className="relative flex-shrink-0">
           <div className="w-10 h-10 rounded-full overflow-hidden bg-darker ring-1 ring-white/10">
             <img
-              src={contact.avatar || `https://api.dicebear.com/9.x/bottts/svg?seed=${contact.id}`}
+              src={contact.avatar || `https://api.dicebear.com/9.x/bottts/svg?seed=${contact.name}`}
               alt={contact.name}
               className="w-full h-full object-cover"
             />
@@ -333,6 +352,7 @@ interface ContactsPanelProps {
   teamName?: string
   unit?: string
   avatarStyle?: string
+  mainProcessName?: string
 }
 
 // Cron 任务卡片
@@ -347,16 +367,16 @@ function CronJobCard({ job }: { job: CronJob }) {
       initial={{ opacity: 0, x: -10 }}
       animate={{ opacity: 1, x: 0 }}
     >
-      <div className="flex items-center justify-between mb-1">
-        <span className="text-xs font-medium text-white/80 truncate">{job.name}</span>
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-1 text-[10px] text-white/40">
+          <Clock className="w-3 h-3" />
+          <span>{job.scheduleHuman}</span>
+        </div>
         <span className={`text-[10px] px-1.5 py-0.5 rounded ${job.enabled ? 'bg-green-500/20 text-green-400' : 'bg-gray-500/20 text-gray-400'}`}>
           {job.enabled ? '启用' : '禁用'}
         </span>
       </div>
-      <div className="flex items-center gap-1 text-[10px] text-white/40">
-        <Clock className="w-3 h-3" />
-        <span>{job.scheduleHuman}</span>
-      </div>
+      <div className="text-xs font-medium text-white/80 truncate mt-1">{job.name}</div>
     </motion.div>
   )
 }
@@ -523,7 +543,8 @@ export function ContactsPanel({
   onStatusChange,
   teamName = '海洋战队',
   unit = '只虾',
-  avatarStyle = 'bottts'
+  avatarStyle = 'bottts',
+  mainProcessName = '龙虾船长'
 }: ContactsPanelProps) {
   const [agents, setAgents] = useState<AgentData[]>([])
   const [isLoading, setIsLoading] = useState(true)
@@ -602,8 +623,8 @@ export function ContactsPanel({
   
   // 将 agent 数据转换为 Contact 格式
   const contacts = useMemo(() => {
-    return agents.map((agent, index) => agentToContact(agent, index, avatarStyle))
-  }, [agents, avatarStyle])
+    return agents.map((agent, index) => agentToContact(agent, index, avatarStyle, mainProcessName))
+  }, [agents, avatarStyle, mainProcessName])
   
   const onlineCount = contacts.filter(c => c.status === 'online').length
   const totalCount = contacts.length

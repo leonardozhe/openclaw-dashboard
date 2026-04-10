@@ -73,6 +73,7 @@ export default function Home() {
   const [unit, setUnit] = useState('只虾')
   const [avatarStyle, setAvatarStyle] = useState('bottts')
   const [effects, setEffects] = useState<string[]>(['scanline']) // 默认开启扫描线
+  const [mainProcessName, setMainProcessName] = useState('龙虾船长') // 主进程名称
   const [githubStars, setGithubStars] = useState<number | null>(null)
   
   // 从 localStorage 加载聊天记录和自定义设置
@@ -86,6 +87,7 @@ export default function Home() {
     const savedUnit = localStorage.getItem('openclaw-unit')
     const savedAvatarStyle = localStorage.getItem('openclaw-avatar-style')
     const savedEffects = localStorage.getItem('openclaw-effects')
+    const savedMainProcessName = localStorage.getItem('openclaw-main-process-name')
     
     if (savedChatMessages) {
       try {
@@ -148,6 +150,10 @@ export default function Home() {
         console.error('Failed to parse saved effects:', e)
       }
     }
+    
+    if (savedMainProcessName) {
+      setTimeout(() => setMainProcessName(savedMainProcessName), 0)
+    }
   }, [])
   
   // 保存聊天记录到 localStorage
@@ -180,6 +186,9 @@ export default function Home() {
     const fetchChannels = async () => {
       try {
         const response = await fetch('/api/channels')
+        if (!response.ok) {
+          return // 静默失败，不显示错误
+        }
         const data = await response.json()
         if (data.channels) {
           setChannels(data.channels)
@@ -196,6 +205,9 @@ export default function Home() {
     const fetchGithubStars = async () => {
       try {
         const response = await fetch('/api/github-stars')
+        if (!response.ok) {
+          return // 静默失败，不显示错误
+        }
         const data = await response.json()
         if (data.stars !== undefined) {
           setGithubStars(data.stars)
@@ -256,6 +268,7 @@ export default function Home() {
   const handleSendChatMessage = useCallback((text: string) => {
     console.log('🔍 handleSendChatMessage 调用:', { text, selectedChatChannel })
     console.log('🔌 websocketTerminalRef:', websocketTerminalRef.current)
+    console.log('🔌 websocketTerminalRef.current.sendChatMessage:', websocketTerminalRef.current?.sendChatMessage)
     
     if (!websocketTerminalRef.current) {
       console.warn('⚠️ websocketTerminalRef 为空')
@@ -277,6 +290,7 @@ export default function Home() {
       setChatMessages(prev => [...prev, userMsg])
       setIsSleeping(false)
       setIsAIThinking(true)
+      console.log('✅ 用户消息已添加，AI 思考状态已开启')
     } else {
       console.warn('⚠️ sendChatMessage 返回 false')
     }
@@ -286,7 +300,8 @@ export default function Home() {
   useEffect(() => {
     const handleChatMessage = (event: CustomEvent) => {
       const { channelId, text, payload } = event.detail
-      console.log('📨 收到聊天消息事件:', { channelId, text })
+      console.log('📨 收到聊天消息事件:', { channelId, text, payload })
+      console.log('📨 当前 chatMessages 长度:', chatMessages.length)
       if (!text) {
         console.warn('⚠️ 聊天消息为空:', payload)
         return
@@ -303,14 +318,22 @@ export default function Home() {
         downvotes: Math.floor(Math.random() * 10),
         ctxPercent: Math.floor(Math.random() * 100)
       }
-      setChatMessages(prev => [...prev, aiMsg])
+      console.log('📨 准备添加 AI 消息:', aiMsg)
+      setChatMessages(prev => {
+        const newMessages = [...prev, aiMsg]
+        console.log('📨 新消息列表长度:', newMessages.length)
+        return newMessages
+      })
       // 关闭 AI 思考状态
       setIsAIThinking(false)
+      console.log('✅ AI 思考状态已关闭')
     }
     
     window.addEventListener('openclaw:chat:message', handleChatMessage as EventListener)
+    console.log('🔔 已注册 openclaw:chat:message 事件监听器')
     return () => {
       window.removeEventListener('openclaw:chat:message', handleChatMessage as EventListener)
+      console.log('🔕 已移除 openclaw:chat:message 事件监听器')
     }
   }, []) // 空依赖数组，确保事件监听器只绑定一次
 
@@ -336,15 +359,107 @@ export default function Home() {
   const [showCommandSuggestions, setShowCommandSuggestions] = useState(false)
   const [selectedCommandIndex, setSelectedCommandIndex] = useState(0)
 
-  const commandSuggestions = [
-    { cmd: '/backup', desc: '备份当前配置', full: '/backup 备份当前配置' },
-    { cmd: '/gateway restart', desc: '重启 Gateway', full: '/gateway restart 重启 Gateway' },
-    { cmd: '/gateway stop', desc: '停止 Gateway', full: '/gateway stop 停止 Gateway' },
-    { cmd: '/compact', desc: '压缩上下文', full: '/compact 压缩上下文' },
-    { cmd: '/memory clear', desc: '清空记忆', full: '/memory clear 清空记忆' },
-    { cmd: '/session reset', desc: '重置会话', full: '/session reset 重置会话' },
-    { cmd: '/model list', desc: '列出模型', full: '/model list 列出可用模型' },
-    { cmd: '/help', desc: '显示帮助', full: '/help 显示帮助信息' }
+  interface CommandSuggestion {
+    cmd: string
+    label?: string
+    desc: string
+    full: string
+  }
+
+  const commandSuggestions: CommandSuggestion[] = [
+    // 系统配置命令
+    { cmd: '/setup', label: '系统初始化', desc: '初始化系统配置', full: '/setup 初始化系统配置' },
+    { cmd: '/onboard', label: '新手引导', desc: '新用户引导流程', full: '/onboard 新用户引导流程' },
+    { cmd: '/config get', label: '获取配置', desc: '获取配置值', full: '/config get <key> 获取配置值' },
+    { cmd: '/config set', label: '设置配置', desc: '设置配置值', full: '/config set <key> <value> 设置配置值' },
+    { cmd: '/config unset', label: '删除配置', desc: '删除配置项', full: '/config unset <key> 删除配置项' },
+    { cmd: '/config file', label: '配置文件', desc: '打开配置文件', full: '/config file 打开配置文件' },
+    { cmd: '/config validate', label: '验证配置', desc: '验证配置语法', full: '/config validate 验证配置' },
+    { cmd: '/completion', label: 'Shell 补全', desc: '生成补全脚本', full: '/completion 生成 Shell 补全脚本' },
+    { cmd: '/doctor', label: '健康检查', desc: '系统诊断', full: '/doctor 系统健康检查' },
+    { cmd: '/dashboard', label: '管理面板', desc: '打开面板', full: '/dashboard 打开管理面板' },
+    // 备份与安全
+    { cmd: '/backup create', label: '创建备份', desc: '备份配置', full: '/backup create 创建配置备份' },
+    { cmd: '/backup verify', label: '验证备份', desc: '检查备份', full: '/backup verify <file> 验证备份文件' },
+    { cmd: '/security audit', label: '安全审计', desc: '安全检查', full: '/security audit 安全审计' },
+    { cmd: '/secrets reload', label: '重载密钥', desc: '重新加载', full: '/secrets reload 重新加载密钥' },
+    { cmd: '/secrets audit', label: '密钥审计', desc: '密钥检查', full: '/secrets audit 密钥审计' },
+    { cmd: '/secrets apply', label: '应用密钥', desc: '应用配置', full: '/secrets apply 应用密钥配置' },
+    // 系统管理
+    { cmd: '/reset', label: '系统重置', desc: '重置系统', full: '/reset 重置系统' },
+    { cmd: '/uninstall', label: '卸载系统', desc: '卸载', full: '/uninstall 卸载系统' },
+    { cmd: '/update wizard', label: '更新向导', desc: '更新引导', full: '/update wizard 更新向导' },
+    { cmd: '/update status', label: '更新状态', desc: '检查更新', full: '/update status 检查更新状态' },
+    // 频道与节点
+    { cmd: '/channels list', label: '频道列表', desc: '所有频道', full: '/channels list 列出所有频道' },
+    { cmd: '/channels status', label: '频道状态', desc: '查看状态', full: '/channels status 查看频道状态' },
+    { cmd: '/channels capabilities', label: '频道能力', desc: '支持能力', full: '/channels capabilities 查看频道能力' },
+    { cmd: '/nodes list', label: '节点列表', desc: '所有节点', full: '/nodes list 列出所有节点' },
+    { cmd: '/nodes status', label: '节点状态', desc: '查看状态', full: '/nodes status 查看节点状态' },
+    // 插件系统
+    { cmd: '/plugins list', label: '插件列表', desc: '已安装插件', full: '/plugins list 列出所有插件' },
+    { cmd: '/plugins install', label: '安装插件', desc: '新插件', full: '/plugins install <name> 安装插件' },
+    { cmd: '/plugins uninstall', label: '卸载插件', desc: '移除插件', full: '/plugins uninstall <name> 卸载插件' },
+    { cmd: '/plugins enable', label: '启用插件', desc: '激活插件', full: '/plugins enable <name> 启用插件' },
+    { cmd: '/plugins disable', label: '禁用插件', desc: '停用插件', full: '/plugins disable <name> 禁用插件' },
+    // 系统状态
+    { cmd: '/status', label: '系统状态', desc: '运行状态', full: '/status 查看系统状态' },
+    { cmd: '/system info', label: '系统信息', desc: '详细信息', full: '/system info 查看系统信息' },
+    { cmd: '/health', label: '健康检查', desc: '服务健康', full: '/health 健康检查' },
+    // 界面与语音
+    { cmd: '/tui', label: '终端界面', desc: 'TUI 模式', full: '/tui 启动终端界面' },
+    { cmd: '/voicecall', label: '语音通话', desc: '语音模式', full: '/voicecall 语音通话' },
+    // Webhooks
+    { cmd: '/webhooks list', label: 'Webhook 列表', desc: '所有订阅', full: '/webhooks list 列出所有 Webhooks' },
+    { cmd: '/webhooks create', label: '创建订阅', desc: '新增 Webhook', full: '/webhooks create 创建 Webhook' },
+    { cmd: '/webhooks delete', label: '删除订阅', desc: '移除 Webhook', full: '/webhooks delete <id> 删除 Webhook' },
+    // 消息与会话
+    { cmd: '/message list', label: '消息列表', desc: '历史消息', full: '/message list 列出消息' },
+    { cmd: '/message send', label: '发送消息', desc: '推送消息', full: '/message send <content> 发送消息' },
+    { cmd: '/sessions list', label: '会话列表', desc: '所有会话', full: '/sessions list 列出所有会话' },
+    { cmd: '/sessions active', label: '活动会话', desc: '当前会话', full: '/sessions active 查看活动会话' },
+    // 任务与流程
+    { cmd: '/tasks list', label: '任务列表', desc: '所有任务', full: '/tasks list 列出所有任务' },
+    { cmd: '/tasks status', label: '任务状态', desc: '执行进度', full: '/tasks status 查看任务状态' },
+    { cmd: '/flows list', label: '流程列表', desc: '所有流程', full: '/flows list 列出所有流程' },
+    { cmd: '/flows run', label: '运行流程', desc: '执行流程', full: '/flows run <name> 运行流程' },
+    // Gateway 管理
+    { cmd: '/gateway restart', label: '重启网关', desc: '重新启动', full: '/gateway restart 重启 Gateway' },
+    { cmd: '/gateway stop', label: '停止网关', desc: '停止服务', full: '/gateway stop 停止 Gateway' },
+    { cmd: '/gateway start', label: '启动网关', desc: '启动服务', full: '/gateway start 启动 Gateway' },
+    { cmd: '/gateway status', label: '网关状态', desc: '运行状态', full: '/gateway status 查看 Gateway 状态' },
+    // Agent 管理
+    { cmd: '/agent list', label: 'Agent 列表', desc: '所有智能体', full: '/agent list 列出所有 Agent' },
+    { cmd: '/agent create', label: '创建 Agent', desc: '新建智能体', full: '/agent create 创建新 Agent' },
+    { cmd: '/agent delete', label: '删除 Agent', desc: '移除智能体', full: '/agent delete <id> 删除 Agent' },
+    { cmd: '/agents active', label: '活动 Agent', desc: '当前智能体', full: '/agents active 查看活动 Agent' },
+    // ACP/MCP协议
+    { cmd: '/acp list', desc: '列出 ACP 连接', full: '/acp list 列出 ACP 连接' },
+    { cmd: '/acp connect', desc: '连接 ACP', full: '/acp connect <url> 连接 ACP' },
+    { cmd: '/mcp list', desc: '列出 MCP 服务器', full: '/mcp list 列出 MCP 服务器' },
+    { cmd: '/mcp add', desc: '添加 MCP 服务器', full: '/mcp add <name> <url> 添加 MCP 服务器' },
+    { cmd: '/mcp remove', desc: '移除 MCP 服务器', full: '/mcp remove <name> 移除 MCP 服务器' },
+    // 审批管理
+    { cmd: '/approvals list', label: '审批列表', desc: '所有审批', full: '/approvals list 列出所有审批' },
+    { cmd: '/approvals pending', label: '待办审批', desc: '等待处理', full: '/approvals pending 查看待处理审批' },
+    { cmd: '/approvals approve', label: '批准', desc: '通过审批', full: '/approvals approve <id> 批准' },
+    { cmd: '/approvals reject', label: '拒绝', desc: '驳回审批', full: '/approvals reject <id> 拒绝' },
+    // 记忆管理
+    { cmd: '/memory clear', label: '清空记忆', desc: '清除记忆', full: '/memory clear 清空记忆' },
+    { cmd: '/memory list', label: '记忆列表', desc: '所有记忆', full: '/memory list 列出所有记忆' },
+    { cmd: '/memory search', label: '搜索记忆', desc: '查找记忆', full: '/memory search <query> 搜索记忆' },
+    // 会话管理
+    { cmd: '/session reset', label: '重置会话', desc: '清空会话', full: '/session reset 重置会话' },
+    { cmd: '/session export', label: '导出会话', desc: '保存会话', full: '/session export <file> 导出会话' },
+    { cmd: '/session import', label: '导入会话', desc: '加载会话', full: '/session import <file> 导入会话' },
+    // 模型管理
+    { cmd: '/model list', label: '模型列表', desc: '可用模型', full: '/model list 列出可用模型' },
+    { cmd: '/model set', label: '设置模型', desc: '切换模型', full: '/model set <name> 设置当前模型' },
+    { cmd: '/model info', label: '模型信息', desc: '模型详情', full: '/model info <name> 查看模型信息' },
+    // 帮助
+    { cmd: '/help', label: '帮助信息', desc: '使用指南', full: '/help 显示帮助信息' },
+    { cmd: '/compact', label: '压缩上下文', desc: '精简对话', full: '/compact 压缩上下文' },
+    { cmd: '/backup', label: '快速备份', desc: '一键备份', full: '/backup 备份当前配置' }
   ]
 
   const handleCommandInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -358,23 +473,41 @@ export default function Home() {
     }
   }
 
+  // 过滤命令建议 - 根据用户输入匹配
+  const filteredCommandSuggestions = commandInput.startsWith('/')
+    ? commandSuggestions.filter(cmd => {
+        const input = commandInput.slice(1).toLowerCase()
+        return cmd.cmd.toLowerCase().includes(input) ||
+               (cmd.label && cmd.label.toLowerCase().includes(input)) ||
+               cmd.desc.toLowerCase().includes(input)
+      })
+    : []
+
   const handleCommandSelect = (fullCommand: string) => {
-    setCommandInput(fullCommand)
-    setShowCommandSuggestions(false)
-    chatInputRef.current?.focus()
+    // 直接发送命令，而不是只填充输入框
+    // 使用 cmd 而不是 full，避免带注释
+    const commandToUse = filteredCommandSuggestions[selectedCommandIndex]
+    if (commandToUse) {
+      handleSendChatMessage(commandToUse.cmd)
+      setCommandInput('')
+      setShowCommandSuggestions(false)
+      chatInputRef.current?.focus()
+    }
   }
 
   const handleCommandKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (showCommandSuggestions) {
+    if (showCommandSuggestions && filteredCommandSuggestions.length > 0) {
       if (e.key === 'ArrowDown') {
         e.preventDefault()
-        setSelectedCommandIndex(prev => (prev + 1) % commandSuggestions.length)
+        setSelectedCommandIndex(prev => (prev + 1) % filteredCommandSuggestions.length)
       } else if (e.key === 'ArrowUp') {
         e.preventDefault()
-        setSelectedCommandIndex(prev => (prev - 1 + commandSuggestions.length) % commandSuggestions.length)
+        setSelectedCommandIndex(prev => (prev - 1 + filteredCommandSuggestions.length) % filteredCommandSuggestions.length)
       } else if (e.key === 'Tab' || e.key === 'Enter') {
         e.preventDefault()
-        handleCommandSelect(commandSuggestions[selectedCommandIndex].full)
+        if (filteredCommandSuggestions[selectedCommandIndex]) {
+          handleCommandSelect(filteredCommandSuggestions[selectedCommandIndex].full)
+        }
       } else if (e.key === 'Escape') {
         setShowCommandSuggestions(false)
       }
@@ -417,7 +550,7 @@ export default function Home() {
   }, [isVoiceMode])
   
   // 保存设置
-  const handleSaveSettings = useCallback((title: string, logo: string, count: number, team: string, unitName: string, style: string, newEffects: string[]) => {
+  const handleSaveSettings = useCallback((title: string, logo: string, count: number, team: string, unitName: string, style: string, newEffects: string[], newMainProcessName: string) => {
     setCustomTitle(title)
     setCustomLogo(logo)
     setLobsterCount(count)
@@ -425,6 +558,7 @@ export default function Home() {
     setUnit(unitName)
     setAvatarStyle(style)
     setEffects(newEffects)
+    setMainProcessName(newMainProcessName)
     localStorage.setItem('openclaw-custom-title', title)
     localStorage.setItem('openclaw-custom-logo', logo)
     localStorage.setItem('openclaw-lobster-count', count.toString())
@@ -432,6 +566,7 @@ export default function Home() {
     localStorage.setItem('openclaw-unit', unitName)
     localStorage.setItem('openclaw-avatar-style', style)
     localStorage.setItem('openclaw-effects', JSON.stringify(newEffects))
+    localStorage.setItem('openclaw-main-process-name', newMainProcessName)
   }, [])
   
   // 格式化 star 数量
@@ -794,37 +929,46 @@ export default function Home() {
                   <div className="absolute bottom-full left-4 right-20 mb-2 rounded-lg border overflow-hidden shadow-lg z-10" style={{
                     background: 'rgba(15, 15, 25, 0.98)',
                     borderColor: 'rgba(0, 240, 255, 0.3)',
-                    boxShadow: '0 -4px 20px rgba(0, 0, 0, 0.4)'
+                    boxShadow: '0 -4px 20px rgba(0, 0, 0, 0.4)',
+                    maxHeight: '300px',
+                    overflowY: 'auto'
                   }}>
-                    {commandSuggestions.map((suggestion, index) => (
-                      <button
-                        key={suggestion.cmd}
-                        onClick={() => handleCommandSelect(suggestion.full)}
-                        className={`w-full px-4 py-2.5 text-left flex items-center justify-between transition-colors ${
-                          index === selectedCommandIndex
-                            ? 'bg-cyan-500/20'
-                            : 'hover:bg-white/5'
-                        }`}
-                      >
-                        <div>
-                          <span className="text-sm font-mono text-cyan-400">{suggestion.cmd}</span>
-                          <span className="text-xs text-gray-500 ml-2">- {suggestion.desc}</span>
-                        </div>
-                        {index === selectedCommandIndex && (
-                          <span className="text-xs text-gray-500">Tab 选择</span>
-                        )}
-                      </button>
-                    ))}
+                    {filteredCommandSuggestions.length > 0 ? (
+                      filteredCommandSuggestions.map((suggestion, index) => (
+                        <button
+                          key={suggestion.cmd}
+                          onClick={() => handleCommandSelect(suggestion.full)}
+                          className={`w-full px-4 py-2.5 text-left flex items-center justify-between transition-colors ${
+                            index === selectedCommandIndex
+                              ? 'bg-cyan-500/20'
+                              : 'hover:bg-white/5'
+                          }`}
+                        >
+                          <div className="flex items-center gap-3">
+                            <span className="text-sm font-mono text-cyan-400 min-w-[140px]">{suggestion.cmd}</span>
+                            {suggestion.label && (
+                              <span className="text-xs font-medium text-cyan-300 bg-cyan-500/10 px-2 py-0.5 rounded">{suggestion.label}</span>
+                            )}
+                            <span className="text-xs text-gray-500">- {suggestion.desc}</span>
+                          </div>
+                          {index === selectedCommandIndex && (
+                            <span className="text-xs text-cyan-400">↹ 选择</span>
+                          )}
+                        </button>
+                      ))
+                    ) : (
+                      <div className="px-4 py-3 text-sm text-gray-500">
+                        未找到匹配的命令
+                      </div>
+                    )}
                   </div>
                 )}
                 
                 <form
                   onSubmit={(e) => {
                     e.preventDefault()
-                    const input = e.currentTarget.querySelector<HTMLInputElement>('input')
-                    if (input?.value?.trim()) {
-                      handleSendChatMessage(input.value.trim())
-                      input.value = ''
+                    if (commandInput.trim()) {
+                      handleSendChatMessage(commandInput.trim())
                       setCommandInput('')
                     }
                   }}
@@ -834,7 +978,7 @@ export default function Home() {
                     ref={chatInputRef}
                     type="text"
                     value={commandInput}
-                    onChange={(e) => setCommandInput(e.target.value)}
+                    onChange={handleCommandInputChange}
                     onKeyDown={handleCommandKeyDown}
                     placeholder="输入消息或 / 命令，按回车发送..."
                     disabled={isAIThinking}
@@ -843,15 +987,28 @@ export default function Home() {
                   <motion.button
                     type="submit"
                     disabled={isAIThinking}
-                    className="px-5 py-2.5 rounded-lg text-sm font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="relative px-6 py-2.5 rounded-lg text-sm font-bold transition-all disabled:opacity-50 disabled:cursor-not-allowed overflow-hidden group"
                     style={{
-                      background: 'linear-gradient(135deg, #00F0FF 0%, #00FF66 100%)',
-                      boxShadow: '0 0 15px rgba(0, 240, 255, 0.3)'
+                      background: 'linear-gradient(135deg, rgba(0, 240, 255, 0.1) 0%, rgba(0, 255, 102, 0.1) 100%)',
+                      border: '1px solid rgba(0, 240, 255, 0.3)',
+                      boxShadow: '0 0 20px rgba(0, 240, 255, 0.2), inset 0 0 20px rgba(0, 240, 255, 0.05)',
+                      color: '#00F0FF',
+                      textShadow: '0 0 10px rgba(0, 240, 255, 0.5)'
                     }}
-                    whileHover={{ scale: isAIThinking ? 1 : 1.02 }}
-                    whileTap={{ scale: isAIThinking ? 1 : 0.98 }}
+                    whileHover={{
+                      scale: isAIThinking ? 1 : 1.05,
+                      boxShadow: '0 0 30px rgba(0, 240, 255, 0.4), inset 0 0 30px rgba(0, 240, 255, 0.1)',
+                      borderColor: 'rgba(0, 240, 255, 0.6)'
+                    }}
+                    whileTap={{ scale: isAIThinking ? 1 : 0.95 }}
                   >
-                    发送
+                    <div className="absolute inset-0 bg-gradient-to-r from-transparent via-cyan-500/10 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-700" />
+                    <div className="flex items-center gap-2">
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+                      </svg>
+                      <span>发送</span>
+                    </div>
                   </motion.button>
                 </form>
               </div>
@@ -1015,25 +1172,8 @@ export default function Home() {
           
         </div>
         
-        {/* 左下角 Terminal 按钮 + 版权和版本信息 */}
-        <div className="absolute bottom-4 left-4 z-20 flex flex-col gap-2">
-          {/* Terminal 按钮 */}
-          <motion.button
-            onClick={() => setIsTerminalOpen(true)}
-            className="px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-all"
-            style={{
-              background: 'rgba(0, 240, 255, 0.1)',
-              border: '1px solid rgba(0, 240, 255, 0.3)',
-              color: '#00F0FF'
-            }}
-            whileHover={{ scale: 1.05, background: 'rgba(0, 240, 255, 0.15)' }}
-            whileTap={{ scale: 0.98 }}
-          >
-            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-            </svg>
-            <span>Terminal</span>
-          </motion.button>
+        {/* 左下角版权和版本信息 */}
+        <div className="absolute bottom-4 left-4 z-20">
           {/* 版权和版本信息 */}
           <div className="flex flex-col text-xs text-gray-500">
             <div>YSK Premium {appVersion}</div>
@@ -1050,6 +1190,7 @@ export default function Home() {
           teamName={teamName}
           unit={unit}
           avatarStyle={avatarStyle}
+          mainProcessName={mainProcessName}
         />
       </div>
       
@@ -1067,6 +1208,7 @@ export default function Home() {
         currentUnit={unit}
         currentAvatarStyle={avatarStyle}
         currentEffects={effects}
+        currentMainProcessName={mainProcessName}
         onSave={handleSaveSettings}
       />
       

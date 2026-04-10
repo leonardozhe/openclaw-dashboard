@@ -633,8 +633,10 @@ export const WebsocketTerminal = forwardRef<{ sendChatMessage: (channelId: strin
                 const chatPayload = jsonData.payload || {}
                 const messageText = chatPayload?.text || chatPayload?.content || JSON.stringify(chatPayload)
                 const channelId = chatPayload?.channelId || 'main'
+                console.log('📨 [Terminal] 收到 chat.message 事件:', { channelId, messageText })
                 addTerminalLine(`💬 [${channelId}] AI: ${messageText}`, 'output')
                 // 触发自定义事件通知 UI 更新
+                console.log('🔔 [Terminal] 触发 openclaw:chat:message 事件')
                 window.dispatchEvent(new CustomEvent('openclaw:chat:message', {
                   detail: { channelId, text: messageText, payload: chatPayload }
                 }))
@@ -644,6 +646,7 @@ export const WebsocketTerminal = forwardRef<{ sendChatMessage: (channelId: strin
                 const chatPayload = jsonData.payload || {}
                 const state = chatPayload.state // 'delta' or 'final'
                 const message = chatPayload.message // { role, content, timestamp }
+                console.log('📨 [Terminal] 收到 chat 事件:', { state, message })
                 
                 if (state === 'final' && message) {
                   // 提取 AI 回复文本
@@ -663,8 +666,10 @@ export const WebsocketTerminal = forwardRef<{ sendChatMessage: (channelId: strin
                   const sessionKey = chatPayload.sessionKey || ''
                   const channelId = sessionKey.split(':').pop() || 'main'
                   
+                  console.log('📨 [Terminal] 提取的消息文本:', { channelId, messageText })
                   addTerminalLine(`💬 [${channelId}] AI: ${messageText}`, 'output')
                   // 触发自定义事件通知 UI 更新 - 这会关闭 AI 思考动画
+                  console.log('🔔 [Terminal] 触发 openclaw:chat:message 事件 (chat 事件)')
                   window.dispatchEvent(new CustomEvent('openclaw:chat:message', {
                     detail: { channelId, text: messageText, payload: chatPayload }
                   }))

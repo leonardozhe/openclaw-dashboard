@@ -1,7 +1,7 @@
 'use client'
 
 import { motion, AnimatePresence } from 'framer-motion'
-import { Users, Database, Brain, Clock, Activity, Cpu, Network } from 'lucide-react'
+import { Users, Database, Brain, Activity, Cpu, Network } from 'lucide-react'
 import { useState, useEffect, useCallback, useRef } from 'react'
 
 interface StatusCardProps {
@@ -95,23 +95,6 @@ function StatusCard({ icon, label, value, status, index, isUpdating }: StatusCar
   )
 }
 
-// 格式化运行时间（秒 -> x 天 x 小时 x 分）
-function formatUptime(seconds: number | null): string {
-  if (seconds === null) return '加载中...'
-  
-  const days = Math.floor(seconds / 86400)
-  const hours = Math.floor((seconds % 86400) / 3600)
-  const minutes = Math.floor((seconds % 3600) / 60)
-  
-  if (days > 0) {
-    return `${days} 天 ${hours} 时 ${minutes} 分`
-  } else if (hours > 0) {
-    return `${hours} 时 ${minutes} 分`
-  } else {
-    return `${minutes} 分`
-  }
-}
-
 // 格式化 Token 数量（使用 K/M 后缀）
 function formatTokens(tokens: number): string {
   if (tokens >= 1000000) {
@@ -124,7 +107,6 @@ function formatTokens(tokens: number): string {
 
 export function SystemStatusCards() {
   const [mounted, setMounted] = useState(false)
-  const [uptime, setUptime] = useState<number | null>(null) // OpenClaw 运行时间（秒）
   const [agentCount, setAgentCount] = useState(0) // 活跃 agent 数量
   const [systemLoad, setSystemLoad] = useState<number | null>(null) // 系统负载百分比
   const [ollamaRunningCount, setOllamaRunningCount] = useState<number | null>(null) // Ollama 运行中的模型数量
@@ -135,7 +117,6 @@ export function SystemStatusCards() {
   // 用于跟踪之前的值，以便在值变化时触发动画
   const prevAgentCountRef = useRef<number | null>(null)
   const prevSystemLoadRef = useRef<number | null>(null)
-  const prevUptimeRef = useRef<number | null>(null)
   const prevTokenRef = useRef<number | null>(null)
   
   // 客户端挂载后才执行动态更新
@@ -148,6 +129,9 @@ export function SystemStatusCards() {
     const fetchAgentCount = async () => {
       try {
         const response = await fetch('/api/agents')
+        if (!response.ok) {
+          return // 静默失败，不显示错误
+        }
         const data = await response.json()
         if (data.activeAgents !== undefined) {
           const newCount = data.activeAgents
@@ -179,6 +163,9 @@ export function SystemStatusCards() {
     const fetchSystemLoad = async () => {
       try {
         const response = await fetch('/api/system-info')
+        if (!response.ok) {
+          return // 静默失败，不显示错误
+        }
         const data = await response.json()
         if (data.device?.cpu?.usage !== undefined && data.device?.memory?.usage !== undefined) {
           // 系统负载 = (CPU使用率 + 内存使用率) / 2
@@ -211,46 +198,15 @@ export function SystemStatusCards() {
     return () => clearInterval(interval)
   }, [])
   
-  // 获取 OpenClaw 运行时间（从 API 获取）
-  useEffect(() => {
-    if (!mounted) return
-    
-    const fetchUptime = async () => {
-      try {
-        const response = await fetch('/api/openclaw-status')
-        const data = await response.json()
-        if (data.service?.uptime !== undefined) {
-          const newUptime = data.service.uptime
-          // 检查值是否变化，变化则触发动画
-          if (prevUptimeRef.current !== null && prevUptimeRef.current !== newUptime) {
-            setUpdatingCards(prev => new Set(prev).add(4)) // card index 4 是运行时长
-            setTimeout(() => {
-              setUpdatingCards(prev => {
-                const newSet = new Set(prev)
-                newSet.delete(4)
-                return newSet
-              })
-            }, 1600)
-          }
-          prevUptimeRef.current = newUptime
-          setUptime(newUptime)
-        }
-      } catch (error) {
-        console.error('Failed to fetch uptime:', error)
-      }
-    }
-    
-    fetchUptime()
-    const interval = setInterval(fetchUptime, 60000) // 每分钟更新
-    return () => clearInterval(interval)
-  }, [mounted])
-  
   // 随机更新卡片值和流水灯效果（只有值真正变化才闪亮）
   // 获取 Ollama 运行中的模型数量
   useEffect(() => {
     const fetchOllamaStatus = async () => {
       try {
         const response = await fetch('/api/ollama-status')
+        if (!response.ok) {
+          return // 静默失败，不显示错误
+        }
         const data = await response.json()
         // 显示已下载的模型数量，如果没有则显示正在运行的模型数量
         const newCount = data.downloadedCount ?? data.runningCount ?? 0
@@ -271,6 +227,9 @@ export function SystemStatusCards() {
     const fetchVectorMemoryStatus = async () => {
       try {
         const response = await fetch('/api/vector-memory-status')
+        if (!response.ok) {
+          return // 静默失败，不显示错误
+        }
         const data = await response.json()
         setVectorMemoryEnabled(data.enabled)
       } catch (error) {
@@ -290,7 +249,8 @@ export function SystemStatusCards() {
       try {
         const response = await fetch('/api/openclaw-status')
         if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`)
+          setTokenConsumption(0) // 静默失败，设置为 0
+          return
         }
         const data = await response.json()
         const newTokens = data.sessions?.contextTokens ?? 0
@@ -387,20 +347,12 @@ export function SystemStatusCards() {
       isUpdating: updatingCards.has(3),
     },
     {
-      icon: <Clock className="w-4 h-4" />,
-      label: '运行时长',
-      value: formatUptime(uptime),
-      status: 'info',
-      index: 4,
-      isUpdating: updatingCards.has(4),
-    },
-    {
       icon: <Cpu className="w-4 h-4" />,
       label: '系统负载',
       value: systemLoad !== null ? `${systemLoad.toFixed(1)}%` : '加载中...',
       status: getLoadStatus(systemLoad),
-      index: 5,
-      isUpdating: updatingCards.has(5),
+      index: 4,
+      isUpdating: updatingCards.has(4),
     },
   ]
   
