@@ -377,17 +377,62 @@ export default function Home() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [currentAgentMessages])
 
-  // 预制命令列表
-  const presetCommands = [
-    { label: '问候', text: '你好', color: 'cyan' },
-    { label: '介绍', text: '请介绍一下你自己', color: 'green' },
-    { label: '天气', text: '今天天气怎么样？', color: 'orange' },
-    { label: '写诗', text: '帮我写一首诗', color: 'purple' },
-    { label: '笑话', text: '讲个笑话', color: 'pink' },
-    { label: '备份', text: '/backup 备份当前配置', color: 'blue', isCommand: true },
-    { label: '重启', text: '/gateway restart 重启 Gateway', color: 'red', isCommand: true },
-    { label: '压缩', text: '/compact 压缩上下文', color: 'yellow', isCommand: true }
-  ]
+  // 预制命令列表（状态管理，支持删除和自定义）
+  // 使用初始化函数从 localStorage 加载
+  const [presetCommands, setPresetCommands] = useState<Array<{ label: string; text: string; color: string; isCommand?: boolean }>>(() => {
+    const savedCommands = localStorage.getItem('openclaw-preset-commands')
+    if (savedCommands) {
+      try {
+        const parsed = JSON.parse(savedCommands)
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed
+        }
+      } catch (e) {
+        console.error('Failed to parse saved preset commands:', e)
+      }
+    }
+    return [
+      { label: '问候', text: '你好', color: 'cyan' },
+      { label: '介绍', text: '请介绍一下你自己', color: 'green' },
+      { label: '天气', text: '今天天气怎么样？', color: 'orange' },
+      { label: '写诗', text: '帮我写一首诗', color: 'purple' },
+      { label: '笑话', text: '讲个笑话', color: 'pink' },
+      { label: '备份', text: '/backup 备份当前配置', color: 'blue', isCommand: true },
+      { label: '重启', text: '/gateway restart 重启 Gateway', color: 'red', isCommand: true },
+      { label: '压缩', text: '/compact 压缩上下文', color: 'yellow', isCommand: true }
+    ]
+  })
+  
+  // 添加新命令的弹窗状态
+  const [isAddCommandOpen, setIsAddCommandOpen] = useState(false)
+  const [newCommandLabel, setNewCommandLabel] = useState('')
+  const [newCommandText, setNewCommandText] = useState('')
+  const [newCommandColor, setNewCommandColor] = useState('cyan')
+  
+  // 保存命令到 localStorage
+  useEffect(() => {
+    localStorage.setItem('openclaw-preset-commands', JSON.stringify(presetCommands))
+  }, [presetCommands])
+  
+  // 删除命令
+  const handleDeleteCommand = useCallback((index: number) => {
+    setPresetCommands(prev => prev.filter((_, i) => i !== index))
+  }, [])
+  
+  // 添加新命令
+  const handleAddCommand = useCallback(() => {
+    if (newCommandLabel.trim() && newCommandText.trim()) {
+      setPresetCommands(prev => [...prev, {
+        label: newCommandLabel.trim(),
+        text: newCommandText.trim(),
+        color: newCommandColor
+      }])
+      setNewCommandLabel('')
+      setNewCommandText('')
+      setNewCommandColor('cyan')
+      setIsAddCommandOpen(false)
+    }
+  }, [newCommandLabel, newCommandText, newCommandColor])
 
   // /命令自动补全
   const [commandInput, setCommandInput] = useState('')
@@ -936,21 +981,48 @@ export default function Home() {
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="text-xs text-gray-500 mr-2">快捷命令:</span>
                   {presetCommands.map((cmd, index) => (
-                    <motion.button
-                      key={index}
-                      onClick={() => handleSendChatMessage(cmd.text)}
-                      className="px-2.5 py-1 rounded text-xs font-medium transition-all hover:scale-105"
-                      style={{
-                        background: `rgba(var(--${cmd.color}-rgb), 0.15)`,
-                        color: `var(--${cmd.color})`,
-                        border: `1px solid rgba(var(--${cmd.color}-rgb), 0.3)`
-                      }}
-                      whileHover={{ scale: 1.05 }}
-                      whileTap={{ scale: 0.95 }}
-                    >
-                      {cmd.label}
-                    </motion.button>
+                    <div key={index} className="flex items-center gap-1 group">
+                      <motion.button
+                        onClick={() => handleSendChatMessage(cmd.text)}
+                        className="px-2.5 py-1 rounded text-xs font-medium transition-all hover:scale-105"
+                        style={{
+                          background: `rgba(var(--${cmd.color}-rgb), 0.15)`,
+                          color: `var(--${cmd.color})`,
+                          border: `1px solid rgba(var(--${cmd.color}-rgb), 0.3)`
+                        }}
+                        whileHover={{ scale: 1.05 }}
+                        whileTap={{ scale: 0.95 }}
+                      >
+                        {cmd.label}
+                      </motion.button>
+                      <button
+                        onClick={() => handleDeleteCommand(index)}
+                        className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-red-500/20 transition-all"
+                        title="删除此命令"
+                      >
+                        <svg className="w-3 h-3 text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                      </button>
+                    </div>
                   ))}
+                  {/* 添加新命令按钮 */}
+                  <motion.button
+                    onClick={() => setIsAddCommandOpen(true)}
+                    className="px-2.5 py-1 rounded text-xs font-medium transition-all hover:scale-105 flex items-center gap-1"
+                    style={{
+                      background: 'rgba(156, 163, 175, 0.15)',
+                      color: '#9CA3AF',
+                      border: '1px solid rgba(156, 163, 175, 0.3)'
+                    }}
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                  >
+                    <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                    </svg>
+                    添加
+                  </motion.button>
                 </div>
               </div>
               
@@ -1255,6 +1327,100 @@ export default function Home() {
         agentName={selectedProfileAgentName}
         avatarUrl={selectedProfileAgentAvatar}
       />
+      
+      {/* 添加快捷命令弹窗 */}
+      <AnimatePresence>
+        {isAddCommandOpen && (
+          <motion.div
+            className="fixed inset-0 z-50 flex items-center justify-center p-4"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+          >
+            <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setIsAddCommandOpen(false)} />
+            <motion.div
+              className="relative w-full max-w-md rounded-2xl overflow-hidden"
+              style={{
+                background: 'rgba(15, 15, 25, 0.98)',
+                border: '1px solid rgba(0, 240, 255, 0.3)',
+                boxShadow: '0 0 60px rgba(0, 240, 255, 0.2)'
+              }}
+              initial={{ scale: 0.95, y: 20 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.95, y: 20 }}
+              transition={{ duration: 0.2 }}
+            >
+              {/* 头部 */}
+              <div className="flex items-center justify-between px-5 py-4 border-b" style={{ borderColor: 'rgba(0, 240, 255, 0.2)' }}>
+                <h3 className="text-base font-medium text-white">添加快捷命令</h3>
+                <button
+                  onClick={() => setIsAddCommandOpen(false)}
+                  className="p-1.5 rounded-lg hover:bg-white/10 transition-colors"
+                >
+                  <svg className="w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+              
+              {/* 内容 */}
+              <div className="px-5 py-4 space-y-4">
+                <div>
+                  <label className="block text-xs font-medium text-gray-400 mb-2">命令名称</label>
+                  <input
+                    type="text"
+                    value={newCommandLabel}
+                    onChange={(e) => setNewCommandLabel(e.target.value)}
+                    placeholder="例如：问候"
+                    className="w-full px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-white text-sm focus:outline-none focus:border-cyan-500/50 transition-colors"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-400 mb-2">命令内容</label>
+                  <textarea
+                    value={newCommandText}
+                    onChange={(e) => setNewCommandText(e.target.value)}
+                    placeholder="例如：你好"
+                    rows={3}
+                    className="w-full px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-white text-sm focus:outline-none focus:border-cyan-500/50 transition-colors resize-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-400 mb-2">颜色</label>
+                  <div className="flex flex-wrap gap-2">
+                    {['cyan', 'green', 'blue', 'purple', 'pink', 'orange', 'red', 'yellow'].map((color) => (
+                      <button
+                        key={color}
+                        onClick={() => setNewCommandColor(color)}
+                        className={`w-8 h-8 rounded-lg border-2 transition-all ${
+                          newCommandColor === color ? 'border-white scale-110' : 'border-transparent hover:scale-105'
+                        }`}
+                        style={{ background: `var(--${color})` }}
+                      />
+                    ))}
+                  </div>
+                </div>
+              </div>
+              
+              {/* 底部按钮 */}
+              <div className="flex items-center justify-end gap-3 px-5 py-4 border-t" style={{ borderColor: 'rgba(0, 240, 255, 0.2)' }}>
+                <button
+                  onClick={() => setIsAddCommandOpen(false)}
+                  className="px-4 py-2 rounded-lg text-sm text-gray-400 hover:text-white hover:bg-white/5 transition-colors"
+                >
+                  取消
+                </button>
+                <button
+                  onClick={handleAddCommand}
+                  className="px-4 py-2 rounded-lg text-sm font-medium bg-cyan-500 text-white hover:bg-cyan-600 transition-colors"
+                >
+                  添加
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
       
       {/* SmartTerminal - 隐藏渲染，仅提供 ref 给聊天功能使用 */}
       <div className="hidden">
