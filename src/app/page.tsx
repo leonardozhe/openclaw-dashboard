@@ -208,7 +208,7 @@ export default function Home() {
     fetchChannels()
   }, [])
   
-  // 获取可用 agents 列表
+  // 获取可用 agents 列表（只显示永久会话）
   useEffect(() => {
     const fetchAgents = async () => {
       try {
@@ -218,10 +218,12 @@ export default function Home() {
         }
         const data = await response.json()
         if (data.agents && Array.isArray(data.agents)) {
-          setAvailableAgents(data.agents)
+          // 只过滤永久会话（chatType === 'permanent'）
+          const permanentAgents = data.agents.filter((a: { chatType?: string }) => a.chatType === 'permanent')
+          setAvailableAgents(permanentAgents)
           // 如果当前选中的 agent 不在列表中，设置为第一个 agent
-          if (!data.agents.find((a: { id: string }) => a.id === selectedAgentId) && data.agents.length > 0) {
-            setSelectedAgentId(data.agents[0].id)
+          if (!permanentAgents.find((a: { id: string }) => a.id === selectedAgentId) && permanentAgents.length > 0) {
+            setSelectedAgentId(permanentAgents[0].id)
           }
         }
       } catch (error) {
