@@ -367,12 +367,12 @@ function CronJobCard({ job }: { job: CronJob }) {
       initial={{ opacity: 0, x: -10 }}
       animate={{ opacity: 1, x: 0 }}
     >
-      <div className="flex items-center justify-between">
-        <span className={`text-[10px] px-1.5 py-0.5 rounded ${job.enabled ? 'bg-green-500/20 text-green-400' : 'bg-gray-500/20 text-gray-400'}`}>
+      <div className="flex items-center gap-2">
+        <span className={`text-[10px] px-1.5 py-0.5 rounded flex-shrink-0 ${job.enabled ? 'bg-green-500/20 text-green-400' : 'bg-gray-500/20 text-gray-400'}`}>
           {job.enabled ? '启用' : '禁用'}
         </span>
+        <span className="text-xs font-medium text-white/80 truncate">{job.name}</span>
       </div>
-      <div className="text-xs font-medium text-white/80 truncate mt-1">{job.name}</div>
     </motion.div>
   )
 }
