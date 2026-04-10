@@ -43,6 +43,12 @@ export default function Home() {
   const [currentAssistant, setCurrentAssistant] = useState<Contact>(contacts[0])
   const [channels, setChannels] = useState<ChannelData[]>([])
   const [chatChannels, setChatChannels] = useState<Channel[]>([])
+  // 可用的 agents 列表
+  const [availableAgents, setAvailableAgents] = useState<{ id: string; name: string; alias?: string; slug?: string; bio?: string; status: string; channel: string }[]>([])
+  // 当前选中的 agent ID（用于选择与哪个 agent 聊天）
+  const [selectedAgentId, setSelectedAgentId] = useState<string>('main')
+  // 为每个 agent 维护独立的聊天记录，使用 Record<agentId, messages[]>
+  const [agentChatMessages, setAgentChatMessages] = useState<Record<string, { id: string; text: string; isUser: boolean; timestamp: number; model?: string; upvotes?: number; downvotes?: number; ctxPercent?: number }[]>>({})
   const [selectedChatChannel, setSelectedChatChannel] = useState<string>('main')
   const [chatMessages, setChatMessages] = useState<{ id: string; channelId: string; text: string; isUser: boolean; timestamp: number; model?: string; upvotes?: number; downvotes?: number; ctxPercent?: number }[]>([])
   const [isVoiceMode, setIsVoiceMode] = useState(false)
@@ -60,9 +66,9 @@ export default function Home() {
   
   // Agent 个人信息弹窗状态
   const [isAgentProfileOpen, setIsAgentProfileOpen] = useState(false)
-  const [selectedAgentId, setSelectedAgentId] = useState('')
-  const [selectedAgentName, setSelectedAgentName] = useState('')
-  const [selectedAgentAvatar, setSelectedAgentAvatar] = useState('')
+  const [selectedProfileAgentId, setSelectedProfileAgentId] = useState('')
+  const [selectedProfileAgentName, setSelectedProfileAgentName] = useState('')
+  const [selectedProfileAgentAvatar, setSelectedProfileAgentAvatar] = useState('')
   
   // 设置相关状态
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
@@ -78,8 +84,9 @@ export default function Home() {
   
   // 从 localStorage 加载聊天记录和自定义设置
   useEffect(() => {
-    const savedChatMessages = localStorage.getItem('openclaw-chat-messages')
+    const savedAgentChatMessages = localStorage.getItem('openclaw-agent-chat-messages')
     const savedAssistantId = localStorage.getItem('openclaw-chat-assistant')
+    const savedSelectedAgentId = localStorage.getItem('openclaw-selected-agent-id')
     const savedTitle = localStorage.getItem('openclaw-custom-title')
     const savedLogo = localStorage.getItem('openclaw-custom-logo')
     const savedLobsterCount = localStorage.getItem('openclaw-lobster-count')
@@ -89,21 +96,21 @@ export default function Home() {
     const savedEffects = localStorage.getItem('openclaw-effects')
     const savedMainProcessName = localStorage.getItem('openclaw-main-process-name')
     
-    if (savedChatMessages) {
+    // 加载按 agent 存储的聊天记录
+    if (savedAgentChatMessages) {
       try {
-        const parsed = JSON.parse(savedChatMessages)
-        // 为旧格式消息重新生成唯一 ID（修复重复 key 问题）
-        const migratedMessages = parsed.map((msg: { id?: string; isUser?: boolean }, index: number) => ({
-          ...msg,
-          id: msg.id?.startsWith('user-') || msg.id?.startsWith('ai-')
-            ? msg.id
-            : `${msg.isUser ? 'user' : 'ai'}-${Date.now()}-${index}-${Math.random().toString(36).substr(2, 9)}`
-        }))
-        // 使用 setTimeout 避免在 effect 中直接调用 setState
-        setTimeout(() => setChatMessages(migratedMessages), 0)
+        const parsed = JSON.parse(savedAgentChatMessages)
+        if (typeof parsed === 'object') {
+          setTimeout(() => setAgentChatMessages(parsed), 0)
+        }
       } catch (e) {
-        console.error('Failed to parse saved chat messages:', e)
+        console.error('Failed to parse saved agent chat messages:', e)
       }
+    }
+    
+    // 加载选中的 agent ID
+    if (savedSelectedAgentId) {
+      setTimeout(() => setSelectedAgentId(savedSelectedAgentId), 0)
     }
     
     if (savedAssistantId) {
@@ -158,11 +165,12 @@ export default function Home() {
   
   // 保存聊天记录到 localStorage
   useEffect(() => {
-    if (chatMessages.length > 0) {
-      localStorage.setItem('openclaw-chat-messages', JSON.stringify(chatMessages))
-    }
+    // 保存按 agent 存储的聊天记录
+    localStorage.setItem('openclaw-agent-chat-messages', JSON.stringify(agentChatMessages))
+    // 保存当前选中的 agent ID
+    localStorage.setItem('openclaw-selected-agent-id', selectedAgentId)
     localStorage.setItem('openclaw-chat-assistant', currentAssistant.id)
-  }, [chatMessages, currentAssistant.id])
+  }, [agentChatMessages, selectedAgentId, currentAssistant.id])
   
   // 睡眠计时器
   useEffect(() => {
@@ -200,6 +208,29 @@ export default function Home() {
     fetchChannels()
   }, [])
   
+  // 获取可用 agents 列表
+  useEffect(() => {
+    const fetchAgents = async () => {
+      try {
+        const response = await fetch('/api/agents')
+        if (!response.ok) {
+          return
+        }
+        const data = await response.json()
+        if (data.agents && Array.isArray(data.agents)) {
+          setAvailableAgents(data.agents)
+          // 如果当前选中的 agent 不在列表中，设置为第一个 agent
+          if (!data.agents.find((a: { id: string }) => a.id === selectedAgentId) && data.agents.length > 0) {
+            setSelectedAgentId(data.agents[0].id)
+          }
+        }
+      } catch (error) {
+        console.error('Failed to fetch agents:', error)
+      }
+    }
+    fetchAgents()
+  }, [])
+  
   // 获取 GitHub stars
   useEffect(() => {
     const fetchGithubStars = async () => {
@@ -221,9 +252,9 @@ export default function Home() {
   
   // 选择联系人 - 打开 Agent 个人信息弹窗
   const handleSelectContact = useCallback((contact: Contact) => {
-    setSelectedAgentId(contact.id)
-    setSelectedAgentName(contact.name)
-    setSelectedAgentAvatar(contact.avatar || `https://api.dicebear.com/9.x/bottts/svg?seed=${contact.id}`)
+    setSelectedProfileAgentId(contact.id)
+    setSelectedProfileAgentName(contact.name)
+    setSelectedProfileAgentAvatar(contact.avatar || `https://api.dicebear.com/9.x/bottts/svg?seed=${contact.id}`)
     setIsAgentProfileOpen(true)
   }, [])
   
@@ -264,9 +295,9 @@ export default function Home() {
     }, thinkTime)
   }, [currentAssistant])
   
-  // 发送聊天消息到 OpenClaw
+  // 发送聊天消息到 OpenClaw - 修改为按 agent 存储消息
   const handleSendChatMessage = useCallback((text: string) => {
-    console.log('🔍 handleSendChatMessage 调用:', { text, selectedChatChannel })
+    console.log('🔍 handleSendChatMessage 调用:', { text, selectedAgentId })
     console.log('🔌 websocketTerminalRef:', websocketTerminalRef.current)
     console.log('🔌 websocketTerminalRef.current.sendChatMessage:', websocketTerminalRef.current?.sendChatMessage)
     
@@ -279,37 +310,37 @@ export default function Home() {
     console.log('📤 sendChatMessage 返回:', success)
     
     if (success) {
-      // 添加用户消息到聊天列表
+      // 添加用户消息到当前选中 agent 的聊天列表
       const userMsg = {
         id: `user-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-        channelId: selectedChatChannel,
         text,
         isUser: true,
         timestamp: Date.now()
       }
-      setChatMessages(prev => [...prev, userMsg])
+      setAgentChatMessages(prev => ({
+        ...prev,
+        [selectedAgentId]: [...(prev[selectedAgentId] || []), userMsg]
+      }))
       setIsSleeping(false)
       setIsAIThinking(true)
       console.log('✅ 用户消息已添加，AI 思考状态已开启')
     } else {
       console.warn('⚠️ sendChatMessage 返回 false')
     }
-  }, [selectedChatChannel])
+  }, [selectedAgentId, selectedChatChannel])
 
-  // 监听 WebSocket 聊天消息事件 - 修复：使用正确的依赖数组
+  // 监听 WebSocket 聊天消息事件 - 按 agent 存储消息
   useEffect(() => {
     const handleChatMessage = (event: CustomEvent) => {
       const { channelId, text, payload } = event.detail
       console.log('📨 收到聊天消息事件:', { channelId, text, payload })
-      console.log('📨 当前 chatMessages 长度:', chatMessages.length)
       if (!text) {
         console.warn('⚠️ 聊天消息为空:', payload)
         return
       }
-      // 添加 AI 回复到聊天列表
+      // 添加 AI 回复到当前选中 agent 的聊天列表
       const aiMsg = {
         id: `ai-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-        channelId,
         text,
         isUser: false,
         timestamp: Date.now(),
@@ -318,12 +349,10 @@ export default function Home() {
         downvotes: Math.floor(Math.random() * 10),
         ctxPercent: Math.floor(Math.random() * 100)
       }
-      console.log('📨 准备添加 AI 消息:', aiMsg)
-      setChatMessages(prev => {
-        const newMessages = [...prev, aiMsg]
-        console.log('📨 新消息列表长度:', newMessages.length)
-        return newMessages
-      })
+      setAgentChatMessages(prev => ({
+        ...prev,
+        [selectedAgentId]: [...(prev[selectedAgentId] || []), aiMsg]
+      }))
       // 关闭 AI 思考状态
       setIsAIThinking(false)
       console.log('✅ AI 思考状态已关闭')
@@ -335,12 +364,16 @@ export default function Home() {
       window.removeEventListener('openclaw:chat:message', handleChatMessage as EventListener)
       console.log('🔕 已移除 openclaw:chat:message 事件监听器')
     }
-  }, []) // 空依赖数组，确保事件监听器只绑定一次
+  }, [selectedAgentId]) // 依赖 selectedAgentId
+
+  // 自动滚屏到最新消息
+  // 获取当前选中 agent 的聊天记录
+  const currentAgentMessages = agentChatMessages[selectedAgentId] || []
 
   // 自动滚屏到最新消息
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [chatMessages])
+  }, [currentAgentMessages])
 
   // 预制命令列表
   const presetCommands = [
@@ -755,18 +788,18 @@ export default function Home() {
                     <span className="text-xs font-bold text-white">OpenClaw 聊天</span>
                   </div>
                   <select
-                    value={selectedChatChannel}
-                    onChange={(e) => setSelectedChatChannel(e.target.value)}
+                    value={selectedAgentId}
+                    onChange={(e) => setSelectedAgentId(e.target.value)}
                     className="px-2.5 py-1 rounded-lg text-xs bg-white/5 border border-cyan-500/30 text-white focus:outline-none focus:border-cyan-500/50 transition-colors"
                   >
-                    {chatChannels.length > 0 ? (
-                      chatChannels.map((ch) => (
-                        <option key={ch.id} value={ch.id}>
-                          {ch.nameZh || ch.name}
+                    {availableAgents.length > 0 ? (
+                      availableAgents.map((agent) => (
+                        <option key={agent.id} value={agent.id}>
+                          {agent.alias || agent.name} {agent.slug ? `(${agent.slug})` : ''}
                         </option>
                       ))
                     ) : (
-                      <option value="main">主频道</option>
+                      <option value="main">主进程</option>
                     )}
                   </select>
                 </div>
@@ -784,7 +817,7 @@ export default function Home() {
                 scrollbarWidth: 'thin',
                 scrollbarColor: 'rgba(0, 240, 255, 0.3) rgba(0, 0, 0, 0.2)'
               }}>
-                {chatMessages.length === 0 && !isAIThinking ? (
+                {currentAgentMessages.length === 0 && !isAIThinking ? (
                   <div className="flex items-center justify-center h-full text-gray-500 text-sm">
                     <div className="text-center">
                       <div className="w-16 h-16 mx-auto mb-3 rounded-full flex items-center justify-center" style={{ background: 'rgba(0, 240, 255, 0.1)', border: '1px solid rgba(0, 240, 255, 0.2)' }}>
@@ -793,12 +826,12 @@ export default function Home() {
                         </svg>
                       </div>
                       <p className="text-base font-medium text-white">暂无消息</p>
-                      <p className="text-xs mt-2 text-gray-500">选择频道后，输入消息或点击预制命令开始对话</p>
+                      <p className="text-xs mt-2 text-gray-500">选择 Agent 后，输入消息或点击预制命令开始对话</p>
                     </div>
                   </div>
                 ) : (
                   <>
-                    {chatMessages.map((msg, index) => (
+                    {currentAgentMessages.map((msg, index) => (
                       <motion.div
                         key={msg.id}
                         initial={{ opacity: 0, y: 10 }}
@@ -1216,9 +1249,9 @@ export default function Home() {
       <AgentProfileModal
         isOpen={isAgentProfileOpen}
         onClose={() => setIsAgentProfileOpen(false)}
-        agentId={selectedAgentId}
-        agentName={selectedAgentName}
-        avatarUrl={selectedAgentAvatar}
+        agentId={selectedProfileAgentId}
+        agentName={selectedProfileAgentName}
+        avatarUrl={selectedProfileAgentAvatar}
       />
       
       {/* SmartTerminal - 隐藏渲染，仅提供 ref 给聊天功能使用 */}
