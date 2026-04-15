@@ -19,7 +19,7 @@ export async function GET() {
       })
     }
 
-    const response = await fetch('https://api.github.com/repos/leonardozhe/openclaw-dashboard', {
+    const response = await fetch('https://api.github.com/repos/leonardozhe/YSK-OpenClaw-Dashboard', {
       headers: {
         'Accept': 'application/vnd.github.v3+json',
         'User-Agent': 'OpenClaw-Dashboard'

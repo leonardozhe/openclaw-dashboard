@@ -825,7 +825,7 @@ const formatTimestamp = (timestamp: number): string => {
                 
                 {/* GitHub 链接 */}
                 <motion.a
-                  href="https://github.com/leonardozhe/openclaw-dashboard"
+                  href="https://github.com/leonardozhe/YSK-OpenClaw-Dashboard"
                   target="_blank"
                   rel="noopener noreferrer"
                   className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-white/10 hover:border-cyan-500/50 hover:bg-white/5 transition-all cursor-pointer group"
