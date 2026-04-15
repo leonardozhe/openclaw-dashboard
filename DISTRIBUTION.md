@@ -1,5 +1,51 @@
 # MeetClaw 分发指南
 
+## 🔒 私有仓库访问说明
+
+本项目托管在私有 GitHub 仓库 `https://github.com/leonardozhe/openclaw-dashboard`。
+
+### 学员获取访问权限
+
+如果你是学员，需要以下步骤才能访问仓库：
+
+#### 方式一：使用 Personal Access Token (PAT)
+
+1. **获取 Token**：联系管理员（leonardozhe）获取 GitHub Personal Access Token
+2. **克隆仓库**：
+   ```bash
+   # 将 YOUR_TOKEN 替换为管理员提供的 Token
+   git clone https://YOUR_TOKEN@github.com/leonardozhe/openclaw-dashboard.git
+   cd openclaw-dashboard
+   ```
+3. **安装依赖并构建**：
+   ```bash
+   npm install
+   npm run tauri build
+   ```
+
+#### 方式二：添加为仓库协作者
+
+1. **提供 GitHub 用户名**：联系管理员，提供你的 GitHub 用户名
+2. **接受邀请**：在 GitHub 通知中接受仓库邀请
+3. **正常克隆**：
+   ```bash
+   git clone https://github.com/leonardozhe/openclaw-dashboard.git
+   cd openclaw-dashboard
+   npm install
+   npm run tauri build
+   ```
+
+#### 方式三：直接下载安装包
+
+如果管理员已发布 Release，可直接下载安装包：
+1. 访问 `https://github.com/leonardozhe/openclaw-dashboard/releases`
+2. 下载对应平台的安装包
+3. 按照下方平台安装说明进行安装
+
+> ⚠️ **安全提示**：Token 属于敏感信息，请勿分享给他人或提交到代码仓库。
+
+---
+
 ## 📦 安装包位置
 
 构建完成后，安装包位于：
