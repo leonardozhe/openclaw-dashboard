@@ -1,5 +1,6 @@
 # MeetClaw - OpenClaw Dashboard
 
+[![Version](https://img.shields.io/badge/version-1.2%20Beta-orange)](https://github.com/leonardozhe/YSK-OpenClaw-Dashboard/releases)
 [![Next.js](https://img.shields.io/badge/Next.js-16-black)](https://nextjs.org)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
