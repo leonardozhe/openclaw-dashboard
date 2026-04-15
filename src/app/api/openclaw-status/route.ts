@@ -314,8 +314,17 @@ export async function GET() {
     try {
       // 使用 openclaw status --all --deep --json 获取完整状态
       const { stdout } = await execAsync(`${OPENCLAW_BIN} status --all --deep --json`, { timeout: 15000 })
-      const jsonOutput = JSON.parse(stdout)
-      statusData = parseStatusJson(jsonOutput)
+      // 清理输出：查找第一个 { 或 [ 字符，忽略前面的日志/警告信息
+      const jsonStartIdx = Math.max(stdout.indexOf('{'), stdout.indexOf('['))
+      const jsonStr = jsonStartIdx >= 0 ? stdout.slice(jsonStartIdx) : stdout
+      let jsonOutput: Record<string, unknown> | unknown[]
+      try {
+        jsonOutput = JSON.parse(jsonStr)
+      } catch (parseError) {
+        console.error('Failed to parse openclaw status JSON, stdout preview:', stdout.slice(0, 200))
+        throw parseError
+      }
+      statusData = parseStatusJson(jsonOutput as Record<string, unknown>)
     } catch (error) {
       console.error('Failed to get status from JSON:', error)
       
