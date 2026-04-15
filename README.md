@@ -2,7 +2,7 @@
 
 [![Version](https://img.shields.io/badge/version-1.2%20Beta-orange)](https://github.com/leonardozhe/YSK-OpenClaw-Dashboard/releases)
 [![Next.js](https://img.shields.io/badge/Next.js-16-black)](https://nextjs.org)
-[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![License](https://img.shields.io/badge/license-YSK%20Fan%20Exclusive-red)](https://github.com/leonardozhe/YSK-OpenClaw-Dashboard#-license)
 
 ![Screenshot](public/ScreenShot_2026-04-15_213037_098.png)
 
@@ -94,7 +94,11 @@ Before publishing, review and update:
 
 ## 📄 License
 
-MIT
+**YSK 会员粉丝专属** - 免费使用，禁止商用
+
+- ✅ YSK 会员粉丝可以免费使用本软件
+- ❌ 禁止用于任何商业用途
+- ❌ 禁止转售、分发或作为商业服务的一部分
 
 ---
 
@@ -184,4 +188,8 @@ npm start
 
 ## 📄 许可证
 
-MIT
+**YSK 会员粉丝专属** - 免费使用，禁止商用
+
+- ✅ YSK 会员粉丝可以免费使用本软件
+- ❌ 禁止用于任何商业用途
+- ❌ 禁止转售、分发或作为商业服务的一部分
