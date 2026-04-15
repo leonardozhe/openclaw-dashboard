@@ -9,10 +9,6 @@
 
 ## 🚀 Quick Start
 
-### One-Click Deploy
-
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fleonardozhe%2Fopenclaw-dashboard)
-
 ### Manual Install
 
 ```bash
@@ -36,19 +32,12 @@ npm run build
 npm start
 ```
 
-### Docker
-
-```bash
-docker build -t meetclaw .
-docker run -p 4000:4000 meetclaw
-```
-
 ---
 
 ## 📋 Requirements
 
 - Node.js 20+
-- npm / yarn / pnpm
+- npm
 
 ## 🌐 Features
 
@@ -84,10 +73,6 @@ MIT
 
 ## 🚀 快速开始
 
-### 一键部署
-
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fleonardozhe%2Fopenclaw-dashboard)
-
 ### 手动安装
 
 ```bash
@@ -111,19 +96,12 @@ npm run build
 npm start
 ```
 
-### Docker 部署
-
-```bash
-docker build -t meetclaw .
-docker run -p 4000:4000 meetclaw
-```
-
 ---
 
 ## 📋 环境要求
 
 - Node.js 20+
-- npm / yarn / pnpm
+- npm
 
 ## 🌐 功能特性
 
