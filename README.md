@@ -94,6 +94,8 @@ Before publishing, review and update:
 
 ## 📄 License
 
+MIT License
+
 **YSK 会员粉丝专属** - 免费使用，禁止商用
 
 - ✅ YSK 会员粉丝可以免费使用本软件
@@ -187,6 +189,8 @@ npm start
 ---
 
 ## 📄 许可证
+
+MIT License
 
 **YSK 会员粉丝专属** - 免费使用，禁止商用
 
