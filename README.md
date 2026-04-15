@@ -65,6 +65,32 @@ npm start
 └── package.json          # Dependencies
 ```
 
+## 🎨 Customization
+
+### Replace Brand Assets
+
+You can customize the following assets to match your brand:
+
+| Asset | File Path | Description |
+|-------|-----------|-------------|
+| **Logo** | `public/openclaw.png` | Main logo displayed in the header |
+| **Avatar** | `public/avatar-team.png` | Default avatar for contacts |
+| **Lobster Image** | `public/lobster.png` | Lobster character image |
+| **Lobster Reference** | `public/lobster-ref.jpg` | Reference image for lobster animation |
+| **Favicon** | `src/app/favicon.ico` | Browser tab icon |
+| **Screenshot** | `public/ScreenShot_*.png` | README screenshot (update filename in README.md) |
+
+### Modify Publishable Content
+
+Before publishing, review and update:
+
+1. **Project Name**: Search and replace "MeetClaw" with your project name
+2. **GitHub URL**: Update all `github.com/leonardozhe/YSK-OpenClaw-Dashboard` references
+3. **Screenshot**: Replace `public/ScreenShot_*.png` with your own screenshot
+4. **Default Port**: Change port `4000` in `package.json` if needed
+
+---
+
 ## 📄 License
 
 MIT
@@ -128,6 +154,32 @@ npm start
 ├── next.config.ts        # Next.js 配置
 └── package.json          # 依赖配置
 ```
+
+## 🎨 自定义内容
+
+### 替换品牌资源
+
+你可以替换以下资源来匹配你的品牌：
+
+| 资源 | 文件路径 | 说明 |
+|------|---------|------|
+| **Logo** | `public/openclaw.png` | 头部显示的主 Logo |
+| **头像** | `public/avatar-team.png` | 联系人默认头像 |
+| **龙虾图片** | `public/lobster.png` | 龙虾角色图片 |
+| **龙虾参考图** | `public/lobster-ref.jpg` | 龙虾动画参考图片 |
+| **Favicon** | `src/app/favicon.ico` | 浏览器标签页图标 |
+| **截图** | `public/ScreenShot_*.png` | README 截图（需要同步更新 README.md 中的文件名） |
+
+### 修改发布内容
+
+发布前，请检查并更新：
+
+1. **项目名称**: 搜索并替换 "MeetClaw" 为你的项目名称
+2. **GitHub 地址**: 更新所有 `github.com/leonardozhe/YSK-OpenClaw-Dashboard` 引用
+3. **截图**: 替换 `public/ScreenShot_*.png` 为你自己的截图
+4. **默认端口**: 如需修改，在 `package.json` 中更改端口 `4000`
+
+---
 
 ## 📄 许可证
 
