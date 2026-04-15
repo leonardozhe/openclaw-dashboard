@@ -13,8 +13,8 @@
 
 ```bash
 # Clone the repository
-git clone https://github.com/leonardozhe/openclaw-dashboard.git
-cd openclaw-dashboard
+git clone https://github.com/leonardozhe/YSK-OpenClaw-Dashboard.git
+cd YSK-OpenClaw-Dashboard
 
 # Install dependencies
 npm install
@@ -77,8 +77,8 @@ MIT
 
 ```bash
 # 克隆仓库
-git clone https://github.com/leonardozhe/openclaw-dashboard.git
-cd openclaw-dashboard
+git clone https://github.com/leonardozhe/YSK-OpenClaw-Dashboard.git
+cd YSK-OpenClaw-Dashboard
 
 # 安装依赖
 npm install
