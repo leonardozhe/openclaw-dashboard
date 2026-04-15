@@ -3,6 +3,8 @@
 [![Next.js](https://img.shields.io/badge/Next.js-16-black)](https://nextjs.org)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
+![Screenshot](public/ScreenShot_2026-04-15_213037_098.png)
+
 **English** | [中文](#中文文档)
 
 ---
