@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { ExternalLink, RefreshCw, X, Copy, Check, Shield, Activity, Wifi } from 'lucide-react'
+import { ExternalLink, RefreshCw, X, Copy, Check, Shield, Activity, Wifi, AlertTriangle } from 'lucide-react'
 
 interface SecurityAuditItem {
   level: 'critical' | 'warn' | 'info'
@@ -52,6 +52,7 @@ export function OpenClawStatusCard() {
   const [loading, setLoading] = useState(true)
   const [showSecurityModal, setShowSecurityModal] = useState(false)
   const [copied, setCopied] = useState(false)
+  const [showDeviceApprovalTip, setShowDeviceApprovalTip] = useState(false)
 
   const fetchStatus = useCallback(async () => {
     try {
@@ -62,6 +63,24 @@ export function OpenClawStatusCard() {
       console.error('Failed to fetch OpenClaw status:', error)
     } finally {
       setLoading(false)
+    }
+  }, [])
+  
+  // 单独检查设备审批状态
+  const checkDeviceApproval = useCallback(async () => {
+    try {
+      const deviceResponse = await fetch('/api/gateway-device')
+      const deviceData = await deviceResponse.json()
+      if (deviceData.device) {
+        // 如果设备未批准或没有设备，显示提醒
+        setShowDeviceApprovalTip(!deviceData.device.approved || !deviceData.device.deviceId)
+      } else {
+        setShowDeviceApprovalTip(true)
+      }
+    } catch (deviceError) {
+      console.warn('Failed to fetch gateway device:', deviceError)
+      // 如果获取设备信息失败，也显示提醒
+      setShowDeviceApprovalTip(true)
     }
   }, [])
 
@@ -307,6 +326,48 @@ export function OpenClawStatusCard() {
 
   return (
     <>
+      {/* 设备审批提醒 */}
+      {showDeviceApprovalTip && (
+        <motion.div
+          className="mb-3 p-3 rounded-xl border"
+          style={{
+            background: 'rgba(255, 170, 0, 0.1)',
+            border: '1px solid rgba(255, 170, 0, 0.3)'
+          }}
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+        >
+          <div className="flex items-start gap-2">
+            <AlertTriangle className="w-4 h-4 text-amber-400 flex-shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <h4 className="text-xs font-medium text-amber-400 mb-1">设备审批提醒</h4>
+              <p className="text-[10px] text-white/70 mb-2">
+                新安装的客户需要到 OpenClaw 后台进行设备审批才能正常使用。
+              </p>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setShowDeviceApprovalTip(false)}
+                  className="text-[9px] px-2 py-1 rounded bg-amber-500/20 text-amber-400 hover:bg-amber-500/30 transition-colors"
+                >
+                  我知道了
+                </button>
+                {status?.dashboard && (
+                  <a
+                    href={status.dashboard}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-[9px] px-2 py-1 rounded bg-cyan-500/20 text-cyan-400 hover:bg-cyan-500/30 transition-colors flex items-center gap-1"
+                  >
+                    <ExternalLink className="w-2.5 h-2.5" />
+                    打开后台
+                  </a>
+                )}
+              </div>
+            </div>
+          </div>
+        </motion.div>
+      )}
+      
       <motion.div
         className="relative p-3 rounded-xl overflow-hidden"
         style={{

@@ -171,9 +171,23 @@ export async function GET() {
         for (const key of sessionKeys) {
           const session = sessionsData[key]
           
+          // 判断会话类型：根据 key 格式判断
+          // key 格式：agent:agentId:sessionId
+          // 如果 sessionId 与 agentId 相同（如 agent:main:main），则是永久会话
+          const keyParts = key.split(':')
+          const sessionId = keyParts[2] // key 的第三部分
+          const agentId = keyParts[1] // key 的第二部分
+          // 永久会话：sessionId === agentId（如 main:main 或其他 agent:agent）
+          const isPermanent = sessionId === agentId
+          
+          // 只处理永久会话，忽略临时会话
+          if (!isPermanent) {
+            continue
+          }
+          
           // 只处理最近 24 小时内活跃的 session
           if (session.updatedAt > oneDayAgo) {
-            // 计算状态：5分钟内为 online，1小时内为 busy，24小时内为 away
+            // 计算状态：5 分钟内为 online，1 小时内为 busy，24 小时内为 away
             const minutesAgo = (now - session.updatedAt) / 60000
             let status: 'online' | 'busy' | 'away' | 'offline' = 'online'
             if (minutesAgo < 5) {
@@ -183,16 +197,6 @@ export async function GET() {
             } else {
               status = 'away'
             }
-            
-            // 判断会话类型：根据 key 格式判断
-            // key 格式: agent:agentId:sessionId
-            // 如果 sessionId 与 agentId 相同（如 agent:main:main），则是永久会话
-            const keyParts = key.split(':')
-            const sessionId = keyParts[2] // key 的第三部分
-            const agentId = keyParts[1] // key 的第二部分
-            // 永久会话：sessionId === agentId（如 main:main 或其他 agent:agent）
-            const isPermanent = sessionId === agentId
-            const chatType: 'temporary' | 'permanent' = isPermanent ? 'permanent' : 'temporary'
             
             // 尝试从 SOUL.md 文件中提取更多信息
             const soulPath = join(agentsDir, agentName, 'SOUL.md')
@@ -209,7 +213,7 @@ export async function GET() {
               channel: session.lastChannel || session.origin?.surface || 'unknown',
               origin: session.origin?.label || 'unknown',
               provider: session.origin?.provider || 'unknown',
-              chatType
+              chatType: 'permanent'
             })
           }
         }

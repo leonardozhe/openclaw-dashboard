@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef, useId, useSyncExternalStore } from 'react'
 import Image from 'next/image'
 import { motion, AnimatePresence } from 'framer-motion'
 import { LottieLobster } from '@/components/lottie-lobster'
@@ -23,6 +23,7 @@ import {
   GlitchEffect
 } from '@/components/voice-animations'
 import { ChatInput, MessageList } from '@/components/chat-input'
+import { CopyButton } from '@/components/copy-button'
 import { SmartTerminal } from '@/components/smart-terminal'
 import { WebsocketTerminal, Channel } from '@/components/websocket-terminal'
 import { contacts, Contact, Message, getAIResponse, cn } from '@/lib/utils'
@@ -39,16 +40,53 @@ interface ChannelData {
 }
 
 export default function Home() {
+  // 使用 useId 生成稳定的组件 ID，避免 hydration 不匹配
+  const componentId = useId()
+  
+  // 消息 ID 计数器（使用递增数字代替随机数）
+  const messageIdCounter = useRef(0)
+  const generateMessageId = useCallback((prefix: string) => {
+    messageIdCounter.current += 1
+    return `${prefix}-${Date.now()}-${messageIdCounter.current}`
+  }, [])
+  
   // 状态
-  const [currentAssistant, setCurrentAssistant] = useState<Contact>(contacts[0])
+  // 使用初始化函数直接从 localStorage 加载，避免 SSR/hydration 问题
+  const [currentAssistant, setCurrentAssistant] = useState<Contact>(() => {
+    if (typeof window === 'undefined') return contacts[0]
+    const savedAssistantId = localStorage.getItem('openclaw-chat-assistant')
+    if (savedAssistantId) {
+      const assistant = contacts.find(c => c.id === savedAssistantId)
+      if (assistant) return assistant
+    }
+    return contacts[0]
+  })
   const [channels, setChannels] = useState<ChannelData[]>([])
   const [chatChannels, setChatChannels] = useState<Channel[]>([])
   // 可用的 agents 列表
   const [availableAgents, setAvailableAgents] = useState<{ id: string; name: string; alias?: string; slug?: string; bio?: string; status: string; channel: string }[]>([])
   // 当前选中的 agent ID（用于选择与哪个 agent 聊天）
-  const [selectedAgentId, setSelectedAgentId] = useState<string>('main')
+  // 使用初始化函数直接从 localStorage 加载，避免 SSR/hydration 问题
+  const [selectedAgentId, setSelectedAgentId] = useState<string>(() => {
+    if (typeof window === 'undefined') return 'main'
+    return localStorage.getItem('openclaw-selected-agent-id') || 'main'
+  })
   // 为每个 agent 维护独立的聊天记录，使用 Record<agentId, messages[]>
-  const [agentChatMessages, setAgentChatMessages] = useState<Record<string, { id: string; text: string; isUser: boolean; timestamp: number; model?: string; upvotes?: number; downvotes?: number; ctxPercent?: number }[]>>({})
+  const [agentChatMessages, setAgentChatMessages] = useState<Record<string, { id: string; text: string; isUser: boolean; timestamp: number; model?: string; upvotes?: number; downvotes?: number; ctxPercent?: number }[]>>(() => {
+    if (typeof window === 'undefined') return {}
+    const saved = localStorage.getItem('openclaw-agent-chat-messages')
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved)
+        if (typeof parsed === 'object' && parsed !== null) {
+          return parsed
+        }
+      } catch (e) {
+        console.error('Failed to parse saved agent chat messages:', e)
+      }
+    }
+    return {}
+  })
   // selectedChatChannel 与 selectedAgentId 同步
   const selectedChatChannel = selectedAgentId
   const [chatMessages, setChatMessages] = useState<{ id: string; channelId: string; text: string; isUser: boolean; timestamp: number; model?: string; upvotes?: number; downvotes?: number; ctxPercent?: number }[]>([])
@@ -64,6 +102,12 @@ export default function Home() {
   const [celebrationTrigger, setCelebrationTrigger] = useState(0)
   const [isChatOpen, setIsChatOpen] = useState(false) // 默认关闭聊天框
   const [isAIThinking, setIsAIThinking] = useState(false) // AI 思考状态
+  // 使用 useSyncExternalStore 检测客户端挂载（修复 hydration 错误）
+  const mounted = useSyncExternalStore(
+    () => () => {}, // subscribe: 不需要订阅外部系统
+    () => true,     // getSnapshot: 客户端始终返回 true
+    () => false     // getServerSnapshot: 服务端返回 false
+  )
   
   // Agent 个人信息弹窗状态
   const [isAgentProfileOpen, setIsAgentProfileOpen] = useState(false)
@@ -74,95 +118,54 @@ export default function Home() {
   // 设置相关状态
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
   const [customTitle, setCustomTitle] = useState('YSK小龙虾工作监控系统')
-  const [customLogo, setCustomLogo] = useState('/openclaw.png')
-  const [lobsterCount, setLobsterCount] = useState(5)
-  const [teamName, setTeamName] = useState('海洋战队')
-  const [unit, setUnit] = useState('只虾')
-  const [avatarStyle, setAvatarStyle] = useState('bottts')
-  const [effects, setEffects] = useState<string[]>(['scanline']) // 默认开启扫描线
-  const [mainProcessName, setMainProcessName] = useState('龙虾船长') // 主进程名称
-  const [githubStars, setGithubStars] = useState<number | null>(null)
-  
-  // 从 localStorage 加载聊天记录和自定义设置
-  useEffect(() => {
-    const savedAgentChatMessages = localStorage.getItem('openclaw-agent-chat-messages')
-    const savedAssistantId = localStorage.getItem('openclaw-chat-assistant')
-    const savedSelectedAgentId = localStorage.getItem('openclaw-selected-agent-id')
-    const savedTitle = localStorage.getItem('openclaw-custom-title')
-    const savedLogo = localStorage.getItem('openclaw-custom-logo')
-    const savedLobsterCount = localStorage.getItem('openclaw-lobster-count')
-    const savedTeamName = localStorage.getItem('openclaw-team-name')
-    const savedUnit = localStorage.getItem('openclaw-unit')
-    const savedAvatarStyle = localStorage.getItem('openclaw-avatar-style')
-    const savedEffects = localStorage.getItem('openclaw-effects')
-    const savedMainProcessName = localStorage.getItem('openclaw-main-process-name')
-    
-    // 加载按 agent 存储的聊天记录
-    if (savedAgentChatMessages) {
-      try {
-        const parsed = JSON.parse(savedAgentChatMessages)
-        if (typeof parsed === 'object') {
-          setTimeout(() => setAgentChatMessages(parsed), 0)
-        }
-      } catch (e) {
-        console.error('Failed to parse saved agent chat messages:', e)
-      }
-    }
-    
-    // 加载选中的 agent ID
-    if (savedSelectedAgentId) {
-      setTimeout(() => setSelectedAgentId(savedSelectedAgentId), 0)
-    }
-    
-    if (savedAssistantId) {
-      const assistant = contacts.find(c => c.id === savedAssistantId)
-      if (assistant) {
-        setTimeout(() => setCurrentAssistant(assistant), 0)
-      }
-    }
-    
-    if (savedTitle) {
-      setTimeout(() => setCustomTitle(savedTitle), 0)
-    }
-    
-    if (savedLogo) {
-      setTimeout(() => setCustomLogo(savedLogo), 0)
-    }
-    
-    if (savedLobsterCount) {
-      const count = parseInt(savedLobsterCount)
+  const [customLogo, setCustomLogo] = useState(() => {
+    if (typeof window === 'undefined') return '/openclaw.png'
+    return localStorage.getItem('openclaw-custom-logo') || '/openclaw.png'
+  })
+  const [lobsterCount, setLobsterCount] = useState(() => {
+    if (typeof window === 'undefined') return 5
+    const saved = localStorage.getItem('openclaw-lobster-count')
+    if (saved) {
+      const count = parseInt(saved)
       if (!isNaN(count) && count >= 1 && count <= 20) {
-        setTimeout(() => setLobsterCount(count), 0)
+        return count
       }
     }
-    
-    if (savedTeamName) {
-      setTimeout(() => setTeamName(savedTeamName), 0)
-    }
-    
-    if (savedUnit) {
-      setTimeout(() => setUnit(savedUnit), 0)
-    }
-    
-    if (savedAvatarStyle) {
-      setTimeout(() => setAvatarStyle(savedAvatarStyle), 0)
-    }
-    
+    return 5
+  })
+  const [teamName, setTeamName] = useState(() => {
+    if (typeof window === 'undefined') return '海洋战队'
+    return localStorage.getItem('openclaw-team-name') || '海洋战队'
+  })
+  const [unit, setUnit] = useState(() => {
+    if (typeof window === 'undefined') return '只虾'
+    return localStorage.getItem('openclaw-unit') || '只虾'
+  })
+  const [avatarStyle, setAvatarStyle] = useState(() => {
+    if (typeof window === 'undefined') return 'bottts'
+    return localStorage.getItem('openclaw-avatar-style') || 'bottts'
+  })
+  const [effects, setEffects] = useState<string[]>(() => {
+    if (typeof window === 'undefined') return ['scanline']
+    const savedEffects = localStorage.getItem('openclaw-effects')
     if (savedEffects) {
       try {
         const parsedEffects = JSON.parse(savedEffects)
         if (Array.isArray(parsedEffects)) {
-          setTimeout(() => setEffects(parsedEffects), 0)
+          return parsedEffects
         }
       } catch (e) {
         console.error('Failed to parse saved effects:', e)
       }
     }
-    
-    if (savedMainProcessName) {
-      setTimeout(() => setMainProcessName(savedMainProcessName), 0)
-    }
-  }, [])
+    return ['scanline']
+  })
+  const [mainProcessName, setMainProcessName] = useState(() => {
+    if (typeof window === 'undefined') return '龙虾船长'
+    return localStorage.getItem('openclaw-main-process-name') || '龙虾船长'
+  })
+  const [githubStars, setGithubStars] = useState<number | null>(null)
+  
   
   // 保存聊天记录到 localStorage
   useEffect(() => {
@@ -276,18 +279,18 @@ export default function Home() {
     
     // 添加用户消息
     const userMsg: Message = {
-      id: Date.now().toString(),
+      id: generateMessageId('user'),
       text,
       type: 'user',
       timestamp: Date.now()
     }
     setMessages(prev => [...prev, userMsg])
     
-    // 模拟 AI 思考和回复 (2-4秒随机延迟)
-    const thinkTime = 2000 + Math.random() * 2000
+    // 模拟 AI 思考和回复 (固定 2 秒延迟，避免 hydration 不匹配)
+    const thinkTime = 2000
     setTimeout(() => {
       const aiMsg: Message = {
-        id: (Date.now() + 1).toString(),
+        id: generateMessageId('ai'),
         text: getAIResponse(text, currentAssistant.name),
         type: 'ai',
         timestamp: Date.now()
@@ -296,7 +299,7 @@ export default function Home() {
       setIsAIThinking(false) // 结束思考
       setCelebrationTrigger(prev => prev + 1)
     }, thinkTime)
-  }, [currentAssistant])
+  }, [currentAssistant, generateMessageId])
   
   // 发送聊天消息到 OpenClaw - 修改为按 agent 存储消息
   const handleSendChatMessage = useCallback((text: string) => {
@@ -315,7 +318,7 @@ export default function Home() {
     if (success) {
       // 添加用户消息到当前选中 agent 的聊天列表
       const userMsg = {
-        id: `user-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        id: generateMessageId('user-chat'),
         text,
         isUser: true,
         timestamp: Date.now()
@@ -330,7 +333,7 @@ export default function Home() {
     } else {
       console.warn('⚠️ sendChatMessage 返回 false')
     }
-  }, [selectedAgentId])
+  }, [selectedAgentId, generateMessageId])
 
   // 监听 WebSocket 聊天消息事件 - 按 agent 存储消息
   // 使用 ref 来避免闭包问题
@@ -338,6 +341,10 @@ export default function Home() {
   useEffect(() => {
     selectedAgentIdRef.current = selectedAgentId
   }, [selectedAgentId])
+  
+  // 消息去重：存储最近处理过的消息 ID，避免重复处理
+  const processedMessageIds = useRef<Set<string>>(new Set())
+  const MAX_STORED_IDS = 100
   
   useEffect(() => {
     const handleChatMessage = (event: CustomEvent) => {
@@ -347,16 +354,41 @@ export default function Home() {
         console.warn('⚠️ 聊天消息为空:', payload)
         return
       }
+      
+      // 生成消息的唯一标识（使用 payload 中的 runId 或内容 + 时间戳）
+      const messageId = payload?.runId || payload?.id || `${channelId}:${text}:${payload?.timestamp || Date.now()}`
+      
+      // 检查是否已处理过此消息
+      if (processedMessageIds.current.has(messageId)) {
+        console.log('⚠️ 消息已处理，跳过:', messageId)
+        return
+      }
+      
+      // 添加到已处理集合
+      processedMessageIds.current.add(messageId)
+      
+      // 限制存储的 ID 数量，避免内存泄漏
+      if (processedMessageIds.current.size > MAX_STORED_IDS) {
+        const iterator = processedMessageIds.current.values()
+        const toDelete = []
+        for (let i = 0; i < MAX_STORED_IDS / 2; i++) {
+          const result = iterator.next()
+          if (!result.done) toDelete.push(result.value)
+        }
+        toDelete.forEach(id => processedMessageIds.current.delete(id))
+      }
+      
       // 添加 AI 回复到当前选中 agent 的聊天列表
+      // 使用稳定的 ID 生成，避免 Math.random() 导致 hydration 不匹配
       const aiMsg = {
-        id: `ai-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        id: generateMessageId('ai-chat'),
         text,
         isUser: false,
         timestamp: Date.now(),
         model: 'qwen3.5-plus',
-        upvotes: Math.floor(Math.random() * 50),
-        downvotes: Math.floor(Math.random() * 10),
-        ctxPercent: Math.floor(Math.random() * 100)
+        upvotes: 0,
+        downvotes: 0,
+        ctxPercent: 100
       }
       setAgentChatMessages(prev => ({
         ...prev,
@@ -387,6 +419,19 @@ export default function Home() {
   // 预制命令列表（状态管理，支持删除和自定义）
   // 使用初始化函数从 localStorage 加载
   const [presetCommands, setPresetCommands] = useState<Array<{ label: string; text: string; isCommand?: boolean }>>(() => {
+    // SSR 检查：只在浏览器环境中访问 localStorage
+    if (typeof window === 'undefined') {
+      return [
+        { label: '问候', text: '你好' },
+        { label: '介绍', text: '请介绍一下你自己' },
+        { label: '天气', text: '今天天气怎么样？' },
+        { label: '写诗', text: '帮我写一首诗' },
+        { label: '笑话', text: '讲个笑话' },
+        { label: '备份', text: '/backup 备份当前配置', isCommand: true },
+        { label: '重启', text: '/gateway restart 重启 Gateway', isCommand: true },
+        { label: '压缩', text: '/compact 压缩上下文', isCommand: true }
+      ]
+    }
     const savedCommands = localStorage.getItem('openclaw-preset-commands')
     if (savedCommands) {
       try {
@@ -653,12 +698,29 @@ export default function Home() {
     localStorage.setItem('openclaw-main-process-name', newMainProcessName)
   }, [])
   
-  // 格式化 star 数量
-  const formatStars = (stars: number): string => {
-    if (stars >= 1000) {
-      return `${(stars / 1000).toFixed(1)}k`
-    }
-    return stars.toString()
+// 格式化 star 数量
+const formatStars = (stars: number): string => {
+  if (stars >= 1000) {
+    return `${(stars / 1000).toFixed(1)}k`
+  }
+  return stars.toString()
+}
+
+// 格式化时间戳为 HH:MM 格式
+const formatTimestamp = (timestamp: number): string => {
+  const date = new Date(timestamp)
+  const hours = String(date.getHours()).padStart(2, '0')
+  const minutes = String(date.getMinutes()).padStart(2, '0')
+  return `${hours}:${minutes}`
+}
+
+  // 防止 hydration 错误：只在客户端挂载后渲染完整内容
+  if (!mounted) {
+    return (
+      <main className="animated-bg min-h-screen text-white overflow-hidden relative flex items-center justify-center">
+        <div className="text-cyan-400 text-lg">Loading...</div>
+      </main>
+    )
   }
 
   return (
@@ -891,7 +953,7 @@ export default function Home() {
                         className={`flex ${msg.isUser ? 'justify-end' : 'justify-start'}`}
                       >
                         <div
-                          className={`max-w-[75%] px-4 py-2.5 rounded-xl border backdrop-blur-sm ${
+                          className={`max-w-[75%] px-4 py-2.5 rounded-xl border backdrop-blur-sm relative group ${
                             msg.isUser
                               ? 'bg-gradient-to-r from-cyan-500/25 to-blue-500/25 border-cyan-400/40 text-white'
                               : 'bg-gradient-to-r from-green-500/10 to-emerald-500/10 border-green-400/40 text-green-50'
@@ -902,6 +964,30 @@ export default function Home() {
                               : '0 0 20px rgba(34, 197, 94, 0.15), inset 0 1px 0 rgba(255, 255, 255, 0.05)'
                           }}
                         >
+                          {/* 复制按钮 - 仅在 AI 消息显示 */}
+                          {!msg.isUser && (
+                            <button
+                              onClick={async () => {
+                                try {
+                                  await navigator.clipboard.writeText(msg.text)
+                                  // 显示复制成功提示
+                                  const toast = document.createElement('div')
+                                  toast.className = 'fixed top-4 left-1/2 -translate-x-1/2 px-4 py-2 bg-green-500/90 text-white rounded-lg text-sm font-medium z-50 animate-pulse'
+                                  toast.textContent = '✓ 已复制到剪贴板'
+                                  document.body.appendChild(toast)
+                                  setTimeout(() => toast.remove(), 2000)
+                                } catch (err) {
+                                  console.error('复制失败:', err)
+                                }
+                              }}
+                              className="absolute top-2 right-2 p-1.5 rounded-lg opacity-0 group-hover:opacity-100 transition-all duration-200 hover:bg-white/10"
+                              title="复制内容"
+                            >
+                              <svg className="w-3.5 h-3.5 text-gray-400 hover:text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                              </svg>
+                            </button>
+                          )}
                           <div className="flex items-center gap-2 mb-1.5">
                             <div className={`w-5 h-5 rounded-full flex items-center justify-center ${
                               msg.isUser
@@ -922,7 +1008,7 @@ export default function Home() {
                               {msg.isUser ? '你' : 'AI'}
                             </span>
                             <span className="text-xs text-gray-500">
-                              {new Date(msg.timestamp).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}
+                              {formatTimestamp(msg.timestamp)}
                             </span>
                           </div>
                           <p className="text-sm leading-relaxed whitespace-pre-wrap">{msg.text}</p>
@@ -985,7 +1071,7 @@ export default function Home() {
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="text-xs text-gray-500 mr-2">快捷命令:</span>
                   {presetCommands.map((cmd, index) => (
-                    <div key={index} className="flex items-center gap-1 group">
+                    <div key={`${cmd.label}-${cmd.text}`} className="flex items-center gap-1 group">
                       <motion.button
                         onClick={() => handleSendChatMessage(cmd.text)}
                         className="px-2.5 py-1 rounded text-xs font-medium transition-all hover:scale-105"
@@ -1208,7 +1294,7 @@ export default function Home() {
                       <div className="flex flex-wrap gap-1.5 justify-center">
                         {currentAssistant.skills.slice(0, 3).map((skill, i) => (
                           <span
-                            key={i}
+                            key={`${skill}-${i}`}
                             className="px-2 py-0.5 text-xs rounded-full"
                             style={{
                               background: `${currentAssistant.color}15`,
@@ -1232,35 +1318,26 @@ export default function Home() {
                       {/* AI 思考动画 */}
                       {isAIThinking && (
                         <motion.div
-                          className="flex items-end gap-2 mt-3"
+                          className="flex items-center gap-2 mt-3 ml-10"
                           initial={{ opacity: 0, y: 10 }}
                           animate={{ opacity: 1, y: 0 }}
                         >
-                          <div className="w-8 h-8 rounded-full overflow-hidden flex-shrink-0">
-                            <img
-                              src={currentAssistant.avatar || `https://api.dicebear.com/9.x/${avatarStyle}/svg?seed=${currentAssistant.id}`}
-                              alt={currentAssistant.name}
-                              className="w-full h-full object-cover"
+                          <div className="flex gap-1.5">
+                            <motion.span
+                              className="w-2 h-2 rounded-full bg-cyan-400"
+                              animate={{ y: [0, -6, 0], opacity: [0.5, 1, 0.5] }}
+                              transition={{ duration: 0.8, repeat: Infinity, delay: 0 }}
                             />
-                          </div>
-                          <div className="px-4 py-2 rounded-xl" style={{ background: 'rgba(255,255,255,0.05)' }}>
-                            <div className="flex gap-1">
-                              <motion.span
-                                className="w-2 h-2 rounded-full bg-gray-400"
-                                animate={{ y: [0, -4, 0] }}
-                                transition={{ duration: 0.6, repeat: Infinity, delay: 0 }}
-                              />
-                              <motion.span
-                                className="w-2 h-2 rounded-full bg-gray-400"
-                                animate={{ y: [0, -4, 0] }}
-                                transition={{ duration: 0.6, repeat: Infinity, delay: 0.2 }}
-                              />
-                              <motion.span
-                                className="w-2 h-2 rounded-full bg-gray-400"
-                                animate={{ y: [0, -4, 0] }}
-                                transition={{ duration: 0.6, repeat: Infinity, delay: 0.4 }}
-                              />
-                            </div>
+                            <motion.span
+                              className="w-2 h-2 rounded-full bg-cyan-400"
+                              animate={{ y: [0, -6, 0], opacity: [0.5, 1, 0.5] }}
+                              transition={{ duration: 0.8, repeat: Infinity, delay: 0.2 }}
+                            />
+                            <motion.span
+                              className="w-2 h-2 rounded-full bg-cyan-400"
+                              animate={{ y: [0, -6, 0], opacity: [0.5, 1, 0.5] }}
+                              transition={{ duration: 0.8, repeat: Infinity, delay: 0.4 }}
+                            />
                           </div>
                         </motion.div>
                       )}
