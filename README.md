@@ -12,7 +12,7 @@
 
 ## 🚀 Quick Start
 
-### Manual Install
+### Production Run (Recommended)
 
 ```bash
 # Clone the repository
@@ -22,17 +22,19 @@ cd YSK-OpenClaw-Dashboard
 # Install dependencies
 npm install
 
-# Start development server
-npm run dev
+# Build and start production server
+npm run build
+npm start
 ```
 
 Open [http://localhost:4000](http://localhost:4000) in your browser.
 
-### Production Build
+### Development Mode (For Customization)
+
+If you need to modify the code for secondary development:
 
 ```bash
-npm run build
-npm start
+npm run dev
 ```
 
 ---
@@ -128,7 +130,7 @@ MIT License
 
 ## 🚀 快速开始
 
-### 手动安装
+### 生产运行（推荐）
 
 ```bash
 # 克隆仓库
@@ -138,17 +140,19 @@ cd YSK-OpenClaw-Dashboard
 # 安装依赖
 npm install
 
-# 启动开发服务器
-npm run dev
+# 构建并启动生产服务器
+npm run build
+npm start
 ```
 
 在浏览器中打开 [http://localhost:4000](http://localhost:4000)。
 
-### 生产构建
+### 开发模式（二次开发）
+
+如需自行修改代码进行二次开发：
 
 ```bash
-npm run build
-npm start
+npm run dev
 ```
 
 ---
