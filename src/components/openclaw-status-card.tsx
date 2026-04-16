@@ -126,8 +126,8 @@ export function OpenClawStatusCard() {
 
   useEffect(() => {
     fetchStatus()
-    // 每 15 分钟刷新一次版本和安全审计信息（静态数据）
-    const versionRefreshInterval = setInterval(fetchVersionAndSecurity, 900000) // 15 分钟 = 15 * 60 * 1000 毫秒
+    // 每 10 分钟刷新一次版本和安全审计信息（静态数据）
+    const versionRefreshInterval = setInterval(fetchVersionAndSecurity, 600000) // 10 分钟 = 600,000 毫秒
     // 每 60 秒刷新一次token数据（从30秒改为60秒，减少频繁调用）
     const tokenRefreshInterval = setInterval(fetchTokenData, 60000) // 60 秒 = 60 * 1000 毫秒
 
