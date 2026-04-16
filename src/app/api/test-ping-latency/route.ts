@@ -4,6 +4,15 @@ import { promisify } from 'util';
 
 const execAsync = promisify(exec);
 
+// 基于主机名的结果缓存，减少频繁 ping 测试
+interface PingCacheEntry {
+  latency: number | null;
+  error?: string;
+  timestamp: number;
+}
+const pingCache = new Map<string, PingCacheEntry>();
+const CACHE_TTL = 10000; // 10 秒缓存
+
 export async function POST(request: Request) {
   try {
     const { hostname } = await request.json();
@@ -15,6 +24,13 @@ export async function POST(request: Request) {
     // 验证主机名格式，防止命令注入
     if (!/^[a-zA-Z0-9.-]+$/.test(hostname)) {
       return NextResponse.json({ latency: null, error: 'Invalid hostname format' });
+    }
+
+    // 检查缓存
+    const cacheKey = hostname.toLowerCase();
+    const cached = pingCache.get(cacheKey);
+    if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
+      return NextResponse.json({ latency: cached.latency, error: cached.error, cached: true });
     }
 
     const startTime = Date.now();
@@ -57,10 +73,26 @@ export async function POST(request: Request) {
         latency = endTime - startTime;
       }
 
-      return NextResponse.json({ latency });
+      const result = { latency, cached: false };
+      
+      // 更新缓存
+      pingCache.set(cacheKey, { latency, timestamp: Date.now() });
+      
+      // 限制缓存大小 (最多 50 个条目)
+      if (pingCache.size > 50) {
+        const firstKey = pingCache.keys().next().value;
+        if (firstKey) pingCache.delete(firstKey);
+      }
+
+      return NextResponse.json(result);
     } catch (error: any) {
       // ping命令失败，可能的原因：网络不通、主机不存在、超时等
-      return NextResponse.json({ latency: null, error: 'Unreachable' });
+      const result = { latency: null, error: 'Unreachable', cached: false };
+      
+      // 也缓存失败结果，避免频繁重试
+      pingCache.set(cacheKey, { latency: null, error: 'Unreachable', timestamp: Date.now() });
+      
+      return NextResponse.json(result);
     }
   } catch (error) {
     console.error('Error testing ping latency:', error);

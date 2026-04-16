@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { exec } from 'child_process'
 import { promisify } from 'util'
-import { readFileSync, readdirSync, existsSync, writeFileSync } from 'fs'
+import { readFileSync, readdirSync, existsSync, writeFileSync, statSync } from 'fs'
 import { join } from 'path'
 import { homedir } from 'os'
 
@@ -15,6 +15,21 @@ const VERSION_CACHE_TTL = 60 * 60 * 1000 // 1 小时缓存
 // 全状态缓存 - 减少频繁调用 openclaw 命令和文件读取
 let cachedFullStatus: { data: unknown; timestamp: number } | null = null
 const FULL_STATUS_CACHE_TTL = 30000 // 30 秒缓存 (从频繁调用中保护)
+
+// Session 文件元数据缓存 - 实现增量扫描
+interface SessionFileMeta {
+  size: number;
+  mtimeMs: number;
+  totalMessages: number;
+  totalInputTokens: number;
+  totalOutputTokens: number;
+}
+let sessionFilesCache = new Map<string, SessionFileMeta>();
+
+// 获取 sessions 目录路径 (延迟初始化)
+function getSessionsDir(): string {
+  return join(homedir(), '.openclaw/agents/main/sessions')
+}
 
 // 从 GitHub 获取最新版本
 async function getLatestVersion(): Promise<string | null> {
@@ -415,9 +430,9 @@ export async function GET() {
       }
     }
     
-    // 获取会话统计信息 - 从 session JSONL 文件中统计
+    // 获取会话统计信息 - 增量扫描，只处理有变化的文件
     try {
-      const sessionsDir = join(homedir(), '.openclaw/agents/main/sessions')
+      const sessionsDir = getSessionsDir()
       if (existsSync(sessionsDir)) {
         const files = readdirSync(sessionsDir).filter(
           f => f.endsWith('.jsonl') && !f.includes('.deleted') && !f.includes('.reset')
@@ -426,29 +441,76 @@ export async function GET() {
         let totalMessages = 0
         let totalInputTokens = 0
         let totalOutputTokens = 0
+        
+        // 跟踪当前缓存中的文件 keys
+        const currentFileKeys = new Set<string>()
 
         for (const file of files) {
           const filePath = join(sessionsDir, file)
+          const fileKey = file
+          
           try {
+            const stat = statSync(filePath)
+            const cached = sessionFilesCache.get(fileKey)
+            
+            // 如果文件在缓存中且未改变，使用缓存数据
+            if (cached && cached.size === stat.size && cached.mtimeMs === stat.mtimeMs) {
+              totalMessages += cached.totalMessages
+              totalInputTokens += cached.totalInputTokens
+              totalOutputTokens += cached.totalOutputTokens
+              currentFileKeys.add(fileKey)
+              continue
+            }
+            
+            // 文件是新的或已改变，重新扫描
             const content = readFileSync(filePath, 'utf-8')
             const lines = content.trim().split('\n')
-            totalMessages += lines.length
+            let fileMessages = lines.length
+            let fileInputTokens = 0
+            let fileOutputTokens = 0
             
             for (const line of lines) {
               try {
                 const data = JSON.parse(line)
                 if (data.type === 'message' && data.message?.usage) {
                   const usage = data.message.usage
-                  totalInputTokens += usage.input || 0
-                  totalOutputTokens += usage.output || 0
+                  fileInputTokens += usage.input || 0
+                  fileOutputTokens += usage.output || 0
                 }
               } catch {
                 // Skip invalid JSON lines
               }
             }
+            
+            // 更新缓存
+            sessionFilesCache.set(fileKey, {
+              size: stat.size,
+              mtimeMs: stat.mtimeMs,
+              totalMessages: fileMessages,
+              totalInputTokens: fileInputTokens,
+              totalOutputTokens: fileOutputTokens
+            })
+            
+            totalMessages += fileMessages
+            totalInputTokens += fileInputTokens
+            totalOutputTokens += fileOutputTokens
+            currentFileKeys.add(fileKey)
           } catch {
             // Skip unreadable files
           }
+        }
+        
+        // 移除已被删除的文件的缓存
+        for (const key of sessionFilesCache.keys()) {
+          if (!currentFileKeys.has(key)) {
+            sessionFilesCache.delete(key)
+          }
+        }
+        
+        // 限制缓存大小
+        if (sessionFilesCache.size > 100) {
+          const toDelete = Array.from(sessionFilesCache.keys()).slice(0, sessionFilesCache.size - 100)
+          toDelete.forEach(k => sessionFilesCache.delete(k))
         }
 
         const totalTokens = totalInputTokens + totalOutputTokens
