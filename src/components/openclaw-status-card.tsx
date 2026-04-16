@@ -57,10 +57,29 @@ export function OpenClawStatusCard() {
   const fetchStatus = useCallback(async () => {
     try {
       const response = await fetch('/api/openclaw-status')
+      if (!response.ok) {
+        // API 返回错误状态（如 500），仍然解析 JSON
+        const data = await response.json()
+        setStatus(data)
+        return
+      }
       const data = await response.json()
       setStatus(data)
     } catch (error) {
       console.error('Failed to fetch OpenClaw status:', error)
+      // 设置错误状态，让 UI 显示友好提示
+      setStatus({
+        version: 'unknown',
+        latestVersion: null,
+        gateway: { mode: 'unknown', address: '', bindMode: '', port: 18789 },
+        service: { status: 'unknown', pid: null, label: 'unknown' },
+        securityAudit: { critical: 0, warn: 0, info: 0, details: [] },
+        channels: [],
+        sessions: { active: 0, contextTokens: 0 },
+        dashboard: '',
+        health: 'unknown',
+        rpc: { ok: false, url: '' }
+      })
     } finally {
       setLoading(false)
     }
@@ -88,6 +107,7 @@ export function OpenClawStatusCard() {
   const fetchTokenData = useCallback(async () => {
     try {
       const response = await fetch('/api/openclaw-status')
+      if (!response.ok) return
       const data = await response.json()
       if (data.sessions?.contextTokens !== undefined && status) {
         setStatus(prev => prev ? {
@@ -110,6 +130,7 @@ export function OpenClawStatusCard() {
   const fetchVersionAndSecurity = useCallback(async () => {
     try {
       const response = await fetch('/api/openclaw-status')
+      if (!response.ok) return
       const data = await response.json()
       if (status && (data.version || data.securityAudit)) {
         setStatus(prev => prev ? {
