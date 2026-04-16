@@ -69,38 +69,38 @@ export function PermissionModal({ onAccept, onDecline }: PermissionModalProps) {
                 <h2 className="text-xl font-bold text-white">使用许可声明</h2>
               </div>
 
-              {/* 许可说明 */}
+              {/* 欢迎说明 */}
               <div className="space-y-4 text-sm">
                 <div className="p-3 rounded-lg" style={{ background: 'rgba(0, 240, 255, 0.05)' }}>
-                  <p className="text-cyan-400 font-semibold mb-1">YSK - OpenClaw Dashboard v1.2 Beta</p>
-                  <p className="text-gray-300">本软件由 YSK 团队开发，专为 YSK 会员粉丝设计。</p>
+                  <p className="text-cyan-400 font-semibold mb-1">欢迎使用 YSK - OpenClaw Dashboard v1.2 Beta</p>
+                  <p className="text-gray-300">本软件由 YSK 团队开发，用于监控和管理 OpenClaw 设备。</p>
                 </div>
 
                 <div className="space-y-2">
-                  <h3 className="text-white font-medium">📋 许可条款</h3>
+                  <h3 className="text-white font-medium">📋 使用说明</h3>
                   <ul className="space-y-2 text-gray-300">
                     <li className="flex items-start gap-2">
                       <span className="text-green-400 mt-0.5">✅</span>
-                      <span><strong className="text-white">免费使用</strong> - YSK 会员粉丝可以免费使用本软件的所有功能</span>
+                      <span><strong className="text-white">免费使用</strong> - 本软件完全免费开放使用</span>
                     </li>
                     <li className="flex items-start gap-2">
-                      <span className="text-red-400 mt-0.5">❌</span>
-                      <span><strong className="text-white">禁止商用</strong> - 不得将本软件用于任何商业用途</span>
+                      <span className="text-green-400 mt-0.5">✅</span>
+                      <span><strong className="text-white">开源</strong> - 基于 MIT 许可证开源</span>
                     </li>
                     <li className="flex items-start gap-2">
-                      <span className="text-red-400 mt-0.5">❌</span>
-                      <span><strong className="text-white">禁止转售</strong> - 不得转售、分发或作为商业服务的一部分</span>
+                      <span className="text-cyan-400 mt-0.5">💡</span>
+                      <span><strong className="text-white">设备监控</strong> - 实时监控 GPU、CPU、内存状态</span>
                     </li>
                     <li className="flex items-start gap-2">
-                      <span className="text-red-400 mt-0.5">❌</span>
-                      <span><strong className="text-white">禁止修改</strong> - 不得修改源代码后重新发布</span>
+                      <span className="text-cyan-400 mt-0.5">💡</span>
+                      <span><strong className="text-white">Agent 管理</strong> - 查看和管理 AI Agent 状态</span>
                     </li>
                   </ul>
                 </div>
 
-                <div className="p-3 rounded-lg" style={{ background: 'rgba(255, 165, 0, 0.1)', border: '1px solid rgba(255, 165, 0, 0.3)' }}>
-                  <p className="text-orange-400 text-xs">
-                    ⚠️ 注意：本软件基于 MIT 许可证开源，但附加了上述使用限制。违反许可条款可能导致法律责任。
+                <div className="p-3 rounded-lg" style={{ background: 'rgba(0, 240, 255, 0.05)', border: '1px solid rgba(0, 240, 255, 0.2)' }}>
+                  <p className="text-cyan-400 text-xs">
+                    💡 点击「我已了解」即可开始使用本软件。
                   </p>
                 </div>
               </div>
@@ -116,7 +116,7 @@ export function PermissionModal({ onAccept, onDecline }: PermissionModalProps) {
                     color: '#9CA3AF'
                   }}
                 >
-                  拒绝并退出
+                  关闭
                 </button>
                 <button
                   onClick={handleAccept}
@@ -126,7 +126,7 @@ export function PermissionModal({ onAccept, onDecline }: PermissionModalProps) {
                     boxShadow: '0 0 15px rgba(0, 240, 255, 0.3)'
                   }}
                 >
-                  我已阅读并同意
+                  我已了解
                 </button>
               </div>
             </div>
