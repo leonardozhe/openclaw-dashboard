@@ -11,6 +11,7 @@ import { ToastNotifications } from '@/components/toast-notifications'
 import { SettingsModal } from '@/components/settings-modal'
 import { AgentProfileModal } from '@/components/agent-profile-modal'
 import { WebsocketTerminalRef } from '@/components/smart-terminal'
+import { PermissionModal } from '@/components/permission-modal'
 import {
   ParticleBackground,
   AIGlow,
@@ -166,6 +167,11 @@ export default function Home() {
   })
   const [githubStars, setGithubStars] = useState<number | null>(null)
   
+  // 权限审批状态
+  const [showPermissionModal, setShowPermissionModal] = useState(() => {
+    if (typeof window === 'undefined') return false
+    return localStorage.getItem('ysk-permission-agreed') !== 'true'
+  })
   
   // 保存聊天记录到 localStorage
   useEffect(() => {
@@ -713,6 +719,18 @@ const formatTimestamp = (timestamp: number): string => {
   const minutes = String(date.getMinutes()).padStart(2, '0')
   return `${hours}:${minutes}`
 }
+
+  // 权限审批处理
+  const handlePermissionAccept = useCallback(() => {
+    setShowPermissionModal(false)
+  }, [])
+
+  const handlePermissionDecline = useCallback(() => {
+    // 用户拒绝后显示简单提示，不阻止使用
+    alert('您已拒绝许可协议。继续使用即表示您同意本软件的使用条款。')
+    setShowPermissionModal(false)
+    localStorage.setItem('ysk-permission-agreed', 'true')
+  }, [])
 
   // 防止 hydration 错误：只在客户端挂载后渲染完整内容
   if (!mounted) {
@@ -1540,6 +1558,14 @@ const formatTimestamp = (timestamp: number): string => {
           </motion.div>
         )}
       </AnimatePresence>
+      
+      {/* 权限审批弹窗 - 仅在首次安装时显示 */}
+      {showPermissionModal && (
+        <PermissionModal
+          onAccept={handlePermissionAccept}
+          onDecline={handlePermissionDecline}
+        />
+      )}
     </main>
   )
 }

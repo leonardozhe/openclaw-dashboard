@@ -3,6 +3,10 @@ import { readFileSync, existsSync, readdirSync } from 'fs'
 import { homedir } from 'os'
 import { join } from 'path'
 
+// Server-side caching to reduce filesystem reads
+let cachedAgents: { data: unknown; timestamp: number } | null = null
+const CACHE_TTL = 30000 // 30 seconds cache - agents don't change frequently
+
 // 从 SOUL.md 文件中提取 agent 信息
 interface SoulInfo {
   alias: string | null
@@ -109,6 +113,10 @@ interface AgentInfo {
 
 export async function GET() {
   try {
+    // Check cache first
+    if (cachedAgents && Date.now() - cachedAgents.timestamp < CACHE_TTL) {
+      return NextResponse.json(cachedAgents.data)
+    }
     const homeDir = homedir()
     const agentsDir = join(homeDir, '.openclaw', 'agents')
     
@@ -243,11 +251,19 @@ export async function GET() {
     // 按最后活跃时间排序
     agents.sort((a, b) => b.lastActive - a.lastActive)
     
-    return NextResponse.json({
+    const response = {
       activeAgents: agents.length,
       agents,
       timestamp: new Date().toISOString()
-    })
+    }
+    
+    // Update cache
+    cachedAgents = {
+      data: response,
+      timestamp: Date.now()
+    }
+    
+    return NextResponse.json(response)
   } catch (error) {
     console.error('Error reading OpenClaw agents:', error)
     return NextResponse.json({

@@ -662,8 +662,8 @@ export function DeviceMonitor() {
       fetchProviders()
     }, 900000) // 15 分钟 = 15 * 60 * 1000 毫秒
 
-    // 每 15 秒刷新一次延迟信息（对于ping测试，使用更长的间隔以减少网络负载）
-    const latencyRefreshInterval = setInterval(refreshLatencies, 15000) // 15 秒 = 15000 毫秒
+    // 每 30 秒刷新一次延迟信息（从15秒改为30秒，减少网络负载）
+    const latencyRefreshInterval = setInterval(refreshLatencies, 30000) // 30 秒 = 30000 毫秒
 
     return () => {
       clearInterval(fullRefreshInterval)

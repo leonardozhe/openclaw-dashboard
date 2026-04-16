@@ -194,7 +194,7 @@ export function SystemStatusCards() {
     }
     
     fetchSystemLoad()
-    const interval = setInterval(fetchSystemLoad, 5000) // 每5秒更新
+    const interval = setInterval(fetchSystemLoad, 15000) // 每15秒更新 (从5秒改为15秒，减少负载)
     return () => clearInterval(interval)
   }, [])
   
@@ -276,7 +276,7 @@ export function SystemStatusCards() {
     }
     
     fetchTokenConsumption()
-    const interval = setInterval(fetchTokenConsumption, 10000) // 每10秒更新
+    const interval = setInterval(fetchTokenConsumption, 60000) // 每60秒更新 (从10秒改为60秒，token数据变化不频繁)
     return () => clearInterval(interval)
   }, [])
   

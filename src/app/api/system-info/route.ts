@@ -5,8 +5,16 @@ import { promisify } from 'util'
 
 const execAsync = promisify(exec)
 
+// Server-side caching to reduce CPU/memory usage from frequent polling
+let cachedSystemInfo: { data: unknown; timestamp: number } | null = null
+const CACHE_TTL = 10000 // 10 seconds cache - balances freshness with performance
+
 export async function GET() {
   try {
+    // Check cache first - reduces expensive shell command execution
+    if (cachedSystemInfo && Date.now() - cachedSystemInfo.timestamp < CACHE_TTL) {
+      return NextResponse.json(cachedSystemInfo.data)
+    }
     // 获取 CPU 信息
     const cpus = os.cpus()
     const cpuModel = cpus[0]?.model || 'Unknown CPU'
@@ -163,6 +171,12 @@ export async function GET() {
         },
         timestamp: new Date().toISOString()
       }
+    }
+    
+    // Update cache
+    cachedSystemInfo = {
+      data: systemInfo,
+      timestamp: Date.now()
     }
     
     return NextResponse.json(systemInfo)

@@ -1,5 +1,9 @@
 import { NextResponse } from 'next/server'
 
+// Server-side caching to reduce external API calls
+let cachedOllamaStatus: { data: unknown; timestamp: number } | null = null
+const CACHE_TTL = 30000 // 30 seconds cache
+
 interface OllamaModel {
   name: string
   model: string
@@ -37,6 +41,10 @@ interface OllamaPsResponse {
 
 export async function GET() {
   try {
+    // Check cache first
+    if (cachedOllamaStatus && Date.now() - cachedOllamaStatus.timestamp < CACHE_TTL) {
+      return NextResponse.json(cachedOllamaStatus.data)
+    }
     // 尝试多个可能的 Ollama 主机地址
     const possibleHosts = [
       process.env.OLLAMA_HOST,
@@ -85,7 +93,7 @@ export async function GET() {
     
     const isRunning = runningModels.length > 0 || downloadedModels.length > 0
     
-    return NextResponse.json({
+    const response = {
       isRunning,
       downloadedCount: downloadedModels.length,
       runningCount: runningModels.length,
@@ -103,7 +111,15 @@ export async function GET() {
         parameterSize: m.details?.parameter_size
       })),
       timestamp: new Date().toISOString()
-    })
+    }
+    
+    // Update cache
+    cachedOllamaStatus = {
+      data: response,
+      timestamp: Date.now()
+    }
+    
+    return NextResponse.json(response)
   } catch (error) {
     console.error('Error fetching Ollama status:', error)
     return NextResponse.json({

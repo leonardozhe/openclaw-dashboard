@@ -90,6 +90,26 @@ Before publishing, review and update:
 3. **Screenshot**: Replace `public/ScreenShot_*.png` with your own screenshot
 4. **Default Port**: Change port `4000` in `package.json` if needed
 
+## 🔐 Installation Approval
+
+When you first install and run YSK - OpenClaw Dashboard, a permission modal will appear:
+
+### What to Expect
+
+1. **First Launch**: A license agreement modal will appear on first run
+2. **Content**: The modal displays the YSK fan exclusive license terms
+3. **Actions**:
+   - Click **"我已阅读并同意"** (I have read and agree) to proceed
+   - Click **"拒绝并退出"** (Decline and exit) to decline
+4. **Persistence**: Once accepted, the modal will not appear again (stored in localStorage)
+
+### For Deployers
+
+If you are deploying this for others:
+- The permission modal appears only on **first installation**
+- Users who have already agreed will not see the modal again
+- To reset the permission state: `localStorage.removeItem('ysk-permission-agreed')`
+
 ---
 
 ## 📄 License
@@ -161,6 +181,28 @@ npm start
 ├── next.config.ts        # Next.js 配置
 └── package.json          # 依赖配置
 ```
+
+## 🔐 安装审批
+
+首次安装并运行 YSK - OpenClaw Dashboard 时，会出现权限审批弹窗：
+
+### 审批流程
+
+1. **首次启动**: 第一次运行时会显示许可协议弹窗
+2. **弹窗内容**: 显示 YSK 会员粉丝专属许可条款
+3. **操作选项**:
+   - 点击 **"我已阅读并同意"** 继续使用
+   - 点击 **"拒绝并退出"** 拒绝许可
+4. **持久化**: 同意后弹窗不再显示（存储在 localStorage 中）
+
+### 部署者须知
+
+如果你是为他人部署：
+- 权限弹窗仅在**首次安装**时出现
+- 已同意的用户不会再看到弹窗
+- 重置权限状态：`localStorage.removeItem('ysk-permission-agreed')`
+
+---
 
 ## 🎨 自定义内容
 

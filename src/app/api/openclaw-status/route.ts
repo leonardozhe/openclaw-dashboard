@@ -12,6 +12,10 @@ const OPENCLAW_BIN = '/Users/leon/.npm-global/bin/openclaw'
 let cachedLatestVersion: { version: string; timestamp: number } | null = null
 const VERSION_CACHE_TTL = 60 * 60 * 1000 // 1 小时缓存
 
+// 全状态缓存 - 减少频繁调用 openclaw 命令和文件读取
+let cachedFullStatus: { data: unknown; timestamp: number } | null = null
+const FULL_STATUS_CACHE_TTL = 30000 // 30 秒缓存 (从频繁调用中保护)
+
 // 从 GitHub 获取最新版本
 async function getLatestVersion(): Promise<string | null> {
   // 检查缓存
@@ -308,6 +312,10 @@ function parseStatusJson(json: Record<string, unknown>): Partial<OpenClawStatus>
 
 export async function GET() {
   try {
+    // 检查全状态缓存 - 减少昂贵的命令执行和文件读取
+    if (cachedFullStatus && Date.now() - cachedFullStatus.timestamp < FULL_STATUS_CACHE_TTL) {
+      return NextResponse.json(cachedFullStatus.data)
+    }
     let statusData: Partial<OpenClawStatus> = {}
     const config = readOpenClawConfig()
     
@@ -607,6 +615,12 @@ export async function GET() {
       health: statusData.health || 'unknown',
       rpc: statusData.rpc || { ok: false, url: '' },
       os: statusData.os || { platform: 'unknown', label: 'unknown' }
+    }
+    
+    // 更新全状态缓存
+    cachedFullStatus = {
+      data: response,
+      timestamp: Date.now()
     }
     
     return NextResponse.json(response)
